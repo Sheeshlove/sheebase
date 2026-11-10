@@ -133,8 +133,11 @@ export function textBlockHeight(text: string, fontSize: number, width: number, b
   return Math.ceil(lines.length * fontSize * LINE_HEIGHT + TEXT_PAD * 2);
 }
 
-/** Параметры текста стикера. */
-export function stickyText(text: string, w: number, h: number) {
+/** Параметры текста стикера. `footer` — место снизу под подпись автора. */
+export function stickyText(text: string, w: number, h: number, footer = 0) {
   const pad = Math.max(8, w * 0.08);
-  return { pad, ...fitText(text, w - pad * 2, h - pad * 2, Math.max(10, Math.round(h * 0.16)), 4) };
+  return { pad, ...fitText(text, w - pad * 2, h - pad * 2 - footer, Math.max(10, Math.round(h * 0.16)), 4) };
 }
+
+/** Высота подписи автора стикера. */
+export const authorFooter = (h: number) => Math.max(12, Math.round(h * 0.1));

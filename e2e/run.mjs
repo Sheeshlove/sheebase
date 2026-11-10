@@ -281,6 +281,237 @@ async function main() {
     assert(size > 5000, `PNG слишком маленький: ${size} байт`);
   });
 
+  // ---------------------------------------------------------------- итерация 2
+  const fitBoth = async () => {
+    for (const p of [A, B]) {
+      await p.mouse.click(650, 130);
+      await p.keyboard.press('Escape');
+      await p.keyboard.press('Shift+1');
+    }
+    await sleep(200);
+  };
+  await fitBoth();
+  const count = (p) => p.evaluate(() => Object.keys(window.__sheebase.state().items).length);
+
+  await step('Регрессия: брошенный пустой текст не оставляет «фантома» в истории', async () => {
+    const n0 = await count(A);
+    await A.keyboard.press('t');
+    await A.mouse.click(620, 800);
+    await A.waitForSelector('[data-editor]');
+    await A.keyboard.press('Escape');
+    assert((await count(A)) === n0, 'остался пустой текстовый блок');
+    await A.keyboard.press('Control+z');
+    const texts = (await items(A)).filter((i) => i.type === 'text' && !i.text.trim());
+    assert(texts.length === 0, 'Ctrl+Z вернул пустой текст');
+    await A.keyboard.press('Control+Shift+z');
+  });
+
+  await step('Комментарии: тред на стикере, ответ второго участника, «решено»', async () => {
+    const c = await screenCenter(A, stickyId);
+    await A.keyboard.press('c');
+    await A.mouse.click(c.x + 30, c.y - 30);
+    await A.waitForSelector('[data-testid=comment-draft]');
+    await A.keyboard.type('Что думаете?');
+    await A.keyboard.press('Enter');
+    await A.waitForSelector('[data-testid=thread-card]');
+    const t = Object.values((await state(A)).comments)[0];
+    assert(t && t.itemId === stickyId, 'тред не привязан к стикеру');
+    await B.waitForSelector('[data-testid=comment-pin]');
+    await B.click('[data-testid=comment-pin]');
+    await B.waitForSelector('[data-testid=thread-reply]');
+    await B.fill('[data-testid=thread-reply]', 'Согласен');
+    await B.keyboard.press('Enter');
+    await waitFor(A, () => Object.values(window.__sheebase.state().comments)[0]?.messages.length === 2);
+    await A.click('[data-testid=thread-resolve]');
+    await waitFor(B, () => Object.values(window.__sheebase.state().comments)[0]?.resolved === true);
+    await A.keyboard.press('Escape');
+    await B.keyboard.press('Escape');
+  });
+
+  await step('Голосование: лимит, скрытые итоги, результаты у всех', async () => {
+    await A.click('[data-testid=voting-button]');
+    await A.click('button[aria-label="Меньше"]');
+    await A.click('[data-testid=voting-start]');
+    await B.waitForSelector('[data-testid=voting-banner]');
+    const c = await screenCenter(B, stickyId);
+    for (let i = 0; i < 3; i++) {
+      await B.mouse.click(c.x, c.y);
+      await sleep(80);
+    }
+    await waitFor(B, (id) => window.__sheebase.state().session.voting?.myVotes[id] === 2, stickyId);
+    await waitFor(A, () => window.__sheebase.state().session.voting?.voters === 1);
+    assert((await state(A)).session.voting.results === null, 'итоги видны до завершения');
+    assert(Object.keys((await state(A)).session.voting.myVotes).length === 0, 'A видит чужие голоса');
+    await A.click('[data-testid=voting-end]');
+    await waitFor(A, (id) => window.__sheebase.state().session.voting?.results?.[id] === 2, stickyId);
+    await B.waitForSelector('[data-testid=results-panel]');
+    await A.click('[data-testid=results-panel] .side-foot .chip');
+    await waitFor(B, () => window.__sheebase.state().session.voting === null);
+  });
+
+  await step('Таймер общий для участников', async () => {
+    await A.click('[data-testid=timer-button]');
+    await A.click('[data-testid=timer-3]');
+    await B.waitForSelector('[data-testid=timer-pill]');
+    const t = await B.textContent('[data-testid=timer-pill]');
+    assert(/[23]:\d\d/.test(t), `таймер у второго участника: ${t}`);
+    await A.click('[data-testid=timer-pill]');
+    await A.click('text=Сброс');
+    await B.waitForSelector('[data-testid=timer-button]');
+  });
+
+  await step('«Собрать всех ко мне»: второй участник следует за видом', async () => {
+    await A.click('.avatar.me');
+    await A.click('[data-testid=summon]');
+    await B.waitForSelector('[data-testid=follow-banner]');
+    await A.keyboard.press('Escape');
+    await A.mouse.move(700, 450);
+    await A.keyboard.down('Control');
+    await A.mouse.wheel(0, -300);
+    await A.keyboard.up('Control');
+    const za = (await state(A)).camera.zoom;
+    await waitFor(B, (z) => Math.abs(window.__sheebase.state().camera.zoom - z) < 0.01, za);
+    await B.mouse.move(700, 450);
+    await B.mouse.wheel(0, 200);
+    await waitFor(B, () => window.__sheebase.state().following === null);
+  });
+
+  await fitBoth();
+
+  await step('Поиск по доске (Ctrl+F)', async () => {
+    await A.keyboard.press('Control+f');
+    await A.waitForSelector('[data-testid=search-input]');
+    await A.keyboard.type('команда');
+    await waitFor(A, () => window.__sheebase.state().search.hits.length === 1);
+    assert((await A.textContent('[data-testid=search-count]')).includes('1 из 1'), 'счётчик совпадений');
+    await A.keyboard.press('Escape');
+    await fitBoth();
+  });
+
+  await step('Выравнивание по левому краю (Alt+A) синхронизируется', async () => {
+    const a = await screenCenter(A, shapeA);
+    const b = await screenCenter(A, shapeB);
+    await A.mouse.click(a.x, a.y);
+    await A.keyboard.down('Shift');
+    await A.mouse.click(b.x, b.y);
+    await A.keyboard.up('Shift');
+    await A.keyboard.press('Alt+a');
+    const it = (await state(A)).items;
+    assert(Math.abs(it[shapeA].x - it[shapeB].x) < 0.01, 'фигуры не выровнены');
+    await waitFor(B, ([x, y]) => Math.abs(window.__sheebase.state().items[x].x - window.__sheebase.state().items[y].x) < 0.01, [shapeA, shapeB]);
+    await A.mouse.click(650, 130);
+  });
+
+  await step('Контекстное меню: дублирование и отмена', async () => {
+    const n0 = await count(A);
+    const c = await screenCenter(A, stickyId);
+    await A.mouse.click(c.x, c.y, { button: 'right' });
+    await A.waitForSelector('[data-testid=context-menu]');
+    await A.click('[data-testid=context-menu] >> text=Дублировать');
+    await waitFor(B, (n) => Object.keys(window.__sheebase.state().items).length === n + 1, n0);
+    await A.keyboard.press('Control+z');
+    await waitFor(B, (n) => Object.keys(window.__sheebase.state().items).length === n, n0);
+  });
+
+  await step('Ссылка на объекте видна второму участнику', async () => {
+    const c = await screenCenter(A, stickyId);
+    await A.mouse.click(c.x, c.y);
+    await A.click('[data-testid=ctx-link]');
+    await A.fill('[data-testid=link-input]', 'example.com/retro');
+    await A.keyboard.press('Enter');
+    await waitFor(B, (id) => window.__sheebase.state().items[id].link === 'https://example.com/retro', stickyId);
+    await B.waitForSelector('.link-badge');
+    await A.mouse.click(650, 130);
+  });
+
+  await step('Автор стикера показывается по настройке «Вид»', async () => {
+    await B.click('[data-testid=view-menu]');
+    await B.click('[data-testid=toggle-authors] input');
+    await B.waitForSelector('.sticky-author');
+    assert((await B.textContent('.sticky-author')) === 'Анна', 'неверный автор');
+    await B.keyboard.press('Escape');
+  });
+
+  await step('Двойной клик редактирует объект; индикатор «редактирует …»; защита от одновременного ввода', async () => {
+    const c = await screenCenter(A, stickyId);
+    await A.mouse.dblclick(c.x, c.y);
+    await A.waitForSelector('[data-editor]');
+    // регрессия: двойной клик редактирует объект под курсором, а не создаёт новый стикер
+    assert((await state(A)).editingId === stickyId, 'двойной клик не открыл ввод в стикере');
+    await B.waitForSelector('.peer-tag.editing');
+    const cb = await screenCenter(B, stickyId);
+    await B.mouse.dblclick(cb.x, cb.y);
+    await sleep(200);
+    assert((await state(B)).editingId === null, 'второй участник смог начать ввод');
+    await A.keyboard.press('Escape');
+    await B.keyboard.press('Escape');
+  });
+
+  await step('Смена имени видна коллеге сразу', async () => {
+    await A.click('.avatar.me');
+    const input = A.locator('.me-panel input');
+    await input.fill('Анна К.');
+    await input.press('Enter');
+    await waitFor(B, () => Object.values(window.__sheebase.state().peers).some((p) => p.name === 'Анна К.'));
+    await A.keyboard.press('Escape');
+  });
+
+  await step('Вставка шаблона в доску — один шаг отмены', async () => {
+    const n0 = await count(A);
+    await A.click('[data-testid=templates-button]');
+    await A.click('[data-testid=insert-template-kanban]');
+    await waitFor(B, (n) => Object.keys(window.__sheebase.state().items).length > n + 10, n0);
+    await A.keyboard.press('Control+z');
+    await waitFor(B, (n) => Object.keys(window.__sheebase.state().items).length === n, n0);
+    await A.keyboard.press('Control+Shift+z');
+    await waitFor(B, (n) => Object.keys(window.__sheebase.state().items).length > n + 10, n0);
+  });
+
+  await step('Панель фреймов и режим презентации', async () => {
+    await A.click('[data-testid=frames-button]');
+    await A.waitForSelector('[data-testid=frames-panel]');
+    await A.click('[data-testid=present-start]');
+    await A.waitForSelector('[data-testid=presentation-bar]');
+    const total = Number((await A.textContent('[data-testid=presentation-count]')).split('/')[1]);
+    assert(total >= 5, `фреймов в показе: ${total}`);
+    await A.keyboard.press('ArrowRight');
+    assert((await A.textContent('[data-testid=presentation-count]')).trim().startsWith('2'), 'не перешли к следующему фрейму');
+    await A.screenshot({ path: path.join(ART, 'presentation.png') });
+    await A.keyboard.press('Escape');
+    await A.waitForSelector('[data-testid=presentation-bar]', { state: 'detached' });
+  });
+
+  await step('История версий: сохранить и восстановить у всех участников', async () => {
+    await A.click('[data-testid=versions-button]');
+    await A.fill('[data-testid=version-name]', 'Перед чисткой');
+    await A.click('[data-testid=version-save]');
+    await A.waitForSelector('[data-testid=version-row] >> text=Перед чисткой');
+    const n0 = await count(A);
+    await A.mouse.click(650, 130);
+    await A.keyboard.press('Control+a');
+    await A.keyboard.press('Delete');
+    await waitFor(B, () => Object.keys(window.__sheebase.state().items).length === 0);
+    A.once('dialog', (d) => d.accept());
+    await A.click('[data-testid=version-row] >> nth=0');
+    await A.click('[data-testid=version-restore]');
+    await waitFor(B, (n) => Object.keys(window.__sheebase.state().items).length === n, n0);
+    await waitFor(A, (n) => Object.keys(window.__sheebase.state().items).length === n, n0);
+    await A.click('[data-testid=versions-button]');
+  });
+
+  await step('Миниатюра доски на дашборде', async () => {
+    const D = await ctxB.newPage();
+    await D.goto(`${BASE}/#/`);
+    const img = await D.waitForSelector('[data-testid=board-thumbnail]');
+    const ok = await img.evaluate((el) =>
+      el.complete ? el.naturalWidth > 0 : new Promise((r) => ((el.onload = () => r(el.naturalWidth > 0)), (el.onerror = () => r(false)))),
+    );
+    assert(ok, 'миниатюра не загрузилась');
+    await D.screenshot({ path: path.join(ART, 'dashboard.png') });
+    await D.close();
+  });
+
+  await fitBoth();
   await A.screenshot({ path: path.join(ART, 'user-a.png') });
   await B.screenshot({ path: path.join(ART, 'user-b.png') });
 

@@ -13,7 +13,7 @@ import { sanitizeItem } from '../../shared/validate';
 import { addItems, cloneItems, viewportCenterWorld } from './actions';
 import { board } from './controller';
 import { getState, showToast } from './store';
-import { FONT_FAMILY, fitText, layoutText, LINE_HEIGHT, stickyText, TEXT_PAD } from './text';
+import { authorFooter, FONT_FAMILY, fitText, layoutText, LINE_HEIGHT, stickyText, TEXT_PAD } from './text';
 
 const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -40,7 +40,7 @@ function textLines(
     .join('');
 }
 
-function itemSvg(it: Item, items: ItemMap): string {
+function itemSvg(it: Item, items: ItemMap, showAuthors: boolean): string {
   switch (it.type) {
     case 'frame':
       return (
@@ -50,15 +50,20 @@ function itemSvg(it: Item, items: ItemMap): string {
         `<text x="${n(it.x)}" y="${n(it.y - 10)}" font-size="16" fill="#5f6368">${esc(it.title)}</text>`
       );
     case 'sticky': {
-      const t = stickyText(it.text, it.w, it.h);
+      const footer = showAuthors && it.author ? authorFooter(it.h) : 0;
+      const t = stickyText(it.text, it.w, it.h, footer);
+      const author = footer
+        ? `<text x="${n(it.x + t.pad)}" y="${n(it.y + it.h - t.pad * 0.6 - footer * 0.4)}" font-size="${n(footer * 0.75)}" fill="rgba(0,0,0,0.55)" dominant-baseline="central">${esc(it.author!)}</text>`
+        : '';
       return (
         `<rect x="${n(it.x + 1)}" y="${n(it.y + 3)}" width="${n(it.w)}" height="${n(it.h)}" fill="rgba(0,0,0,0.08)"/>` +
         `<rect x="${n(it.x)}" y="${n(it.y)}" width="${n(it.w)}" height="${n(it.h)}" fill="${esc(it.color)}"/>` +
-        textLines(t.lines, t.size, { x: it.x + t.pad, y: it.y + t.pad, w: it.w - t.pad * 2, h: it.h - t.pad * 2 }, {
+        textLines(t.lines, t.size, { x: it.x + t.pad, y: it.y + t.pad, w: it.w - t.pad * 2, h: it.h - t.pad * 2 - footer }, {
           color: '#1e1e1e',
           align: 'center',
           valign: 'middle',
-        })
+        }) +
+        author
       );
     }
     case 'shape': {
@@ -120,8 +125,11 @@ function exportSet(): Item[] {
   return [...ids].map((id) => items[id]).filter((x): x is Item => !!x);
 }
 
-export function buildSvg(list: Item[] = exportSet()): { svg: string; width: number; height: number } | null {
-  const { items } = getState();
+export function buildSvg(
+  list: Item[] = exportSet(),
+  items: ItemMap = getState().items,
+): { svg: string; width: number; height: number } | null {
+  const showAuthors = getState().showAuthors;
   if (!list.length) return null;
   const ids = list.map((i) => i.id);
   const b = boundsOf(ids, items)!;
@@ -133,7 +141,7 @@ export function buildSvg(list: Item[] = exportSet()): { svg: string; width: numb
   const height = Math.ceil(b.h + pad * 2 + (hasFrames ? 24 : 0));
   const layer = (t: string) => (t === 'frame' ? 0 : t === 'connector' ? 2 : 1);
   const sorted = [...list].sort((a, c) => layer(a.type) - layer(c.type) || a.z - c.z);
-  const body = sorted.map((it) => itemSvg(it, items)).join('\n');
+  const body = sorted.map((it) => itemSvg(it, items, showAuthors)).join('\n');
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${n(x)} ${n(y)} ${width} ${height}" font-family="${esc(
       FONT_FAMILY,

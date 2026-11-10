@@ -12,8 +12,10 @@ import {
   TextAlignStart,
   Trash,
   Ungroup,
+  AlignCenterVertical,
+  Link2,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { PALETTE, SHAPE_KINDS, STICKY_COLORS } from '../../shared/defaults';
 import { boundsOf } from '../../shared/geometry';
@@ -30,8 +32,12 @@ import {
   toggleLock,
   ungroupSelection,
   updateSelected,
+  LINKABLE,
+  openLink,
+  setLink,
 } from './actions';
-import { useBoard, worldRectToScreen } from './store';
+import { AlignButtons } from './ContextMenu';
+import { showToast, useBoard, votingActive, worldRectToScreen } from './store';
 import { LineStyleIcon, ShapeIcon } from './Toolbar';
 
 const FONT_SIZES = [10, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 64, 80, 96, 120];
@@ -132,6 +138,69 @@ function StrokeWidth({ value, onChange }: { value: number; onChange: (v: number)
 
 const sep = <div className="ctx-sep" />;
 
+function LinkEditor({ id, value }: { id: string; value: string | null | undefined }) {
+  const [text, setText] = useState(value ?? '');
+  return (
+    <Popover
+      trigger={(_o, toggle) => (
+        <button
+          type="button"
+          className={`ctx-btn ${value ? 'active' : ''}`}
+          title={value ? `Ссылка: ${value}` : 'Добавить ссылку'}
+          aria-label="Ссылка"
+          onClick={() => {
+            setText(value ?? '');
+            toggle();
+          }}
+          data-testid="ctx-link"
+        >
+          <Link2 size={18} />
+        </button>
+      )}
+    >
+      {(close) => (
+        <form
+          className="link-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!setLink(id, text)) return showToast('Нужен адрес вида https://…');
+            close();
+          }}
+        >
+          <input
+            autoFocus
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="https://example.com"
+            onKeyDown={(e) => e.stopPropagation()}
+            data-testid="link-input"
+          />
+          <button type="submit" className="primary-btn small">
+            Сохранить
+          </button>
+          {value && (
+            <>
+              <button type="button" className="chip" onClick={() => openLink(value)}>
+                Открыть
+              </button>
+              <button
+                type="button"
+                className="chip"
+                onClick={() => {
+                  setLink(id, null);
+                  close();
+                }}
+              >
+                Убрать
+              </button>
+            </>
+          )}
+        </form>
+      )}
+    </Popover>
+  );
+}
+
 export function ContextToolbar() {
   const sel = useBoard(useShallow((s) => s.selection.map((id) => s.items[id]).filter(Boolean) as Item[]));
   const items = useBoard((s) => s.items);
@@ -140,7 +209,7 @@ export function ContextToolbar() {
   const tool = useBoard((s) => s.tool);
   const viewport = useBoard((s) => s.viewport);
 
-  if (!sel.length || interaction || tool !== 'select') return null;
+  if (!sel.length || interaction || tool !== 'select' || votingActive()) return null;
   const b = boundsOf(
     sel.map((i) => i.id),
     items,
@@ -272,6 +341,26 @@ export function ContextToolbar() {
 
           {one === 'path' && first.type === 'path' && <StrokeWidth value={first.strokeWidth} onChange={(v) => set({ strokeWidth: v })} />}
 
+          {sel.filter((i) => !i.locked && i.type !== 'connector').length > 1 && (
+            <>
+              {sep}
+              <Popover
+                trigger={(_o, toggle) => (
+                  <button type="button" className="ctx-btn" title="Выровнять и распределить" onClick={toggle} data-testid="ctx-align">
+                    <AlignCenterVertical size={18} />
+                  </button>
+                )}
+              >
+                {(close) => <AlignButtons count={sel.filter((i) => !i.locked && i.type !== 'connector').length} onDone={close} />}
+              </Popover>
+            </>
+          )}
+          {sel.length === 1 && LINKABLE.has(first.type) && (
+            <>
+              {sep}
+              <LinkEditor key={first.id} id={first.id} value={first.link} />
+            </>
+          )}
           {sep}
           <Btn title="Дублировать (Ctrl+D)" onClick={duplicateSelection}>
             <Copy size={18} />

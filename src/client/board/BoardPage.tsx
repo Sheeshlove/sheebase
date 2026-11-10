@@ -1,13 +1,17 @@
 import { useEffect } from 'react';
+import { frameOrder } from '../../shared/layout';
 import {
+  alignSelection,
   bringToFront,
   canEditText,
   deleteSelection,
+  distributeSelection,
   duplicateSelection,
   groupSelection,
   insertImageFile,
   nudgeSelection,
   pasteText,
+  presentationGo,
   redo,
   selectAll,
   sendToBack,
@@ -15,19 +19,26 @@ import {
   setSelection,
   setTool,
   startEditing,
+  stopPresentation,
   toggleLock,
   undo,
   ungroupSelection,
   zoomToSelection,
 } from './actions';
 import { Canvas, interactions } from './Canvas';
+import { CommentDraft, CommentsPanel, ThreadCard } from './Comments';
+import { ContextMenu } from './ContextMenu';
 import { ContextToolbar } from './ContextToolbar';
 import { board } from './controller';
+import { FollowFrame, FollowLabel, ResultsPanel, VotingBanner } from './Facilitation';
+import { FramesPanel, PresentationBar, PresentationMask } from './FramesPanel';
 import { HelpDialog, Toast } from './HelpDialog';
 import { NavControls } from './NavControls';
-import { getState, setState, type Tool, useBoard } from './store';
+import { closeSearch, openSearch, SearchBar } from './SearchBar';
+import { getState, setState, type Tool, useBoard, votingActive } from './store';
 import { Toolbar } from './Toolbar';
 import { TopBar } from './TopBar';
+import { VersionsPanel } from './VersionsPanel';
 
 function isEditable(t: EventTarget | null): boolean {
   const el = t as HTMLElement | null;
@@ -45,7 +56,64 @@ const TOOL_KEYS: Record<string, Tool> = {
   KeyP: 'pen',
   KeyE: 'eraser',
   KeyF: 'frame',
+  KeyC: 'comment',
 };
+
+/** Клавиши режима презентации. */
+function presentationKeys(e: KeyboardEvent) {
+  const st = getState();
+  const n = frameOrder(st.items).length;
+  const i = st.presenting!.index;
+  switch (e.key) {
+    case 'ArrowRight':
+    case 'ArrowDown':
+    case 'PageDown':
+    case ' ':
+    case 'Enter':
+      presentationGo(i + 1);
+      break;
+    case 'ArrowLeft':
+    case 'ArrowUp':
+    case 'PageUp':
+    case 'Backspace':
+      presentationGo(i - 1);
+      break;
+    case 'Home':
+      presentationGo(0);
+      break;
+    case 'End':
+      presentationGo(n - 1);
+      break;
+    case 'Escape':
+      stopPresentation();
+      break;
+    default:
+      return;
+  }
+  e.preventDefault();
+}
+
+/** Навигация, доступная всегда (в том числе во время голосования). Возвращает true, если клавиша обработана. */
+function navigationKeys(e: KeyboardEvent, mod: boolean): boolean {
+  const st = getState();
+  const code = e.code;
+  if (mod) {
+    if (code === 'Equal' || code === 'NumpadAdd') board.zoomAt(st.camera.zoom * 1.25);
+    else if (code === 'Minus' || code === 'NumpadSubtract') board.zoomAt(st.camera.zoom / 1.25);
+    else if (code === 'Digit0') board.zoomAt(1);
+    else return false;
+    e.preventDefault();
+    return true;
+  }
+  if (e.altKey) return false;
+  if (e.shiftKey && code === 'Digit1') return void board.zoomToFit(), true;
+  if (e.shiftKey && code === 'Digit0') return void board.zoomAt(1), true;
+  if (e.shiftKey && code === 'Digit2') return void zoomToSelection(), true;
+  if (e.key === '?' || (e.shiftKey && code === 'Slash')) return void setState({ showHelp: true }), true;
+  if (e.key === '+' || e.key === '=') return void board.zoomAt(st.camera.zoom * 1.25), true;
+  if (e.key === '-' || e.key === '_') return void board.zoomAt(st.camera.zoom / 1.25), true;
+  return false;
+}
 
 function onKeyDown(e: KeyboardEvent) {
   if (isEditable(e.target)) return;
@@ -58,11 +126,32 @@ function onKeyDown(e: KeyboardEvent) {
     if (e.key === 'Escape') setState({ showHelp: false });
     return;
   }
+  if (st.presenting) return presentationKeys(e);
+
+  if (mod && code === 'KeyF') {
+    e.preventDefault();
+    openSearch();
+    return;
+  }
   if (code === 'Space') {
     e.preventDefault();
     if (!st.spacePan) setState({ spacePan: true });
     return;
   }
+  if (e.key === 'Escape') {
+    if (st.contextMenu) setState({ contextMenu: null });
+    else if (interactions?.active) interactions.cancel();
+    else if (st.commentDraft) setState({ commentDraft: null });
+    else if (st.openThreadId) setState({ openThreadId: null });
+    else if (st.search.open) closeSearch();
+    else if (st.following) board.stopFollowing();
+    else if (st.tool !== 'select') setTool('select');
+    else setSelection([]);
+    return;
+  }
+  if (navigationKeys(e, mod)) return;
+  // во время голосования доска «заморожена»: только навигация
+  if (votingActive(st)) return;
 
   if (mod) {
     let handled = true;
@@ -88,36 +177,34 @@ function onKeyDown(e: KeyboardEvent) {
         if (e.shiftKey) toggleLock();
         else handled = false;
         break;
-      case 'Equal':
-      case 'NumpadAdd':
-        board.zoomAt(st.camera.zoom * 1.25);
-        break;
-      case 'Minus':
-      case 'NumpadSubtract':
-        board.zoomAt(st.camera.zoom / 1.25);
-        break;
-      case 'Digit0':
-        board.zoomAt(1);
-        break;
       default:
         handled = false;
     }
     if (handled) e.preventDefault();
     return;
   }
-  if (e.altKey) return;
 
-  if (e.shiftKey && code === 'Digit1') return void board.zoomToFit();
-  if (e.shiftKey && code === 'Digit0') return void board.zoomAt(1);
-  if (e.shiftKey && code === 'Digit2') return void zoomToSelection();
-  if (e.key === '?' || (e.shiftKey && code === 'Slash')) return void setState({ showHelp: true });
+  // выравнивание: Alt+A/D/W/S/H/V, распределение: Alt+Shift+H/V
+  if (e.altKey) {
+    const align: Record<string, () => void> = e.shiftKey
+      ? { KeyH: () => distributeSelection('x'), KeyV: () => distributeSelection('y') }
+      : {
+          KeyA: () => alignSelection('left'),
+          KeyD: () => alignSelection('right'),
+          KeyW: () => alignSelection('top'),
+          KeyS: () => alignSelection('bottom'),
+          KeyH: () => alignSelection('hcenter'),
+          KeyV: () => alignSelection('vmiddle'),
+        };
+    const fn = align[code];
+    if (fn && st.selection.length > 1) {
+      e.preventDefault();
+      fn();
+    }
+    return;
+  }
 
   switch (e.key) {
-    case 'Escape':
-      if (interactions?.active) interactions.cancel();
-      else if (st.tool !== 'select') setTool('select');
-      else setSelection([]);
-      return;
     case 'Delete':
     case 'Backspace':
       e.preventDefault();
@@ -150,14 +237,6 @@ function onKeyDown(e: KeyboardEvent) {
       e.preventDefault();
       sendToBack();
       return;
-    case '+':
-    case '=':
-      board.zoomAt(st.camera.zoom * 1.25);
-      return;
-    case '-':
-    case '_':
-      board.zoomAt(st.camera.zoom / 1.25);
-      return;
   }
 
   if (e.shiftKey) return;
@@ -175,16 +254,17 @@ function onKeyUp(e: KeyboardEvent) {
 }
 
 function onCopy(e: ClipboardEvent, cut = false) {
-  if (isEditable(e.target) || !getState().selection.length) return;
+  if (isEditable(e.target) || !getState().selection.length || getState().presenting) return;
   const data = serializeSelection();
   if (!data || !e.clipboardData) return;
   e.clipboardData.setData('text/plain', data);
   e.preventDefault();
-  if (cut) deleteSelection();
+  if (cut && !votingActive()) deleteSelection();
 }
 
 function onPaste(e: ClipboardEvent) {
-  if (isEditable(e.target) || !getState().loaded || !e.clipboardData) return;
+  const st = getState();
+  if (isEditable(e.target) || !st.loaded || !e.clipboardData || st.presenting || votingActive(st)) return;
   const images = [...e.clipboardData.files].filter((f) => f.type.startsWith('image/'));
   e.preventDefault();
   if (images.length) {
@@ -197,7 +277,23 @@ function onPaste(e: ClipboardEvent) {
 /** Кнопки интерфейса не забирают фокус (иначе Пробел/Enter нажимали бы их повторно). */
 function keepFocus(e: MouseEvent) {
   const t = e.target as HTMLElement;
-  if (t.closest?.('button') && !t.closest('input')) e.preventDefault();
+  if (t.closest?.('button') && !t.closest('input, textarea')) e.preventDefault();
+}
+
+function SidePanel() {
+  const panel = useBoard((s) => s.panel);
+  switch (panel) {
+    case 'comments':
+      return <CommentsPanel />;
+    case 'frames':
+      return <FramesPanel />;
+    case 'versions':
+      return <VersionsPanel />;
+    case 'results':
+      return <ResultsPanel />;
+    default:
+      return null;
+  }
 }
 
 export function BoardPage({ id }: { id: string }) {
@@ -205,6 +301,7 @@ export function BoardPage({ id }: { id: string }) {
   const status = useBoard((s) => s.status);
   const error = useBoard((s) => s.error);
   const name = useBoard((s) => s.meta?.name);
+  const presenting = useBoard((s) => !!s.presenting);
 
   useEffect(() => {
     board.open(id);
@@ -238,13 +335,33 @@ export function BoardPage({ id }: { id: string }) {
   }, []);
 
   return (
-    <div className="board-page">
+    <div className={`board-page ${presenting ? 'presenting' : ''}`}>
       <Canvas />
-      <TopBar />
-      <Toolbar />
-      <ContextToolbar />
-      <NavControls />
-      <HelpDialog />
+      {presenting ? (
+        <>
+          <PresentationMask />
+          <PresentationBar />
+        </>
+      ) : (
+        <>
+          <FollowFrame />
+          <TopBar />
+          <Toolbar />
+          <ContextToolbar />
+          {/* плашки по центру сверху — в одном столбце, чтобы не перекрывались */}
+          <div className="top-center">
+            <FollowLabel />
+            <VotingBanner />
+            <SearchBar />
+          </div>
+          <NavControls />
+          <SidePanel />
+          <ThreadCard />
+          <CommentDraft />
+          <ContextMenu />
+          <HelpDialog />
+        </>
+      )}
       <Toast />
       {!loaded && status !== 'error' && (
         <div className="loading" data-testid="loading">

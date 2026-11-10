@@ -1,12 +1,16 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  alignSelection,
   cloneItems,
   computeMoveSet,
   createAndEdit,
   createSticky,
   createText,
+  insertTemplate,
   nudgeSelection,
   quickCreate,
+  setLink,
+  startEditing,
   stopEditing,
   updateItems,
 } from '../src/client/board/actions';
@@ -206,5 +210,79 @@ describe('регрессии: переименование без связи', (
       clientId: 'c1',
     });
     expect(getState().meta?.name).toBe('Новое');
+  });
+});
+
+const onMessage = (m: unknown) => (board as unknown as { onMessage(m: unknown): void }).onMessage(m);
+
+describe('итерация 2: клиент', () => {
+  it('reset: свежий снимок + неподтверждённые правки, история очищается', () => {
+    load({ a: makeSticky('a', 0, 0, 1, '#fff', 'старое') });
+    board.apply([{ t: 'update', id: 'a', patch: { x: 500 } }]); // ещё не подтверждено сервером
+    expect(getState().canUndo).toBe(true);
+    onMessage({ t: 'reset', reason: 'Восстановлено', items: { a: makeSticky('a', 0, 0, 1, '#fff', 'из версии'), b: makeSticky('b', 9, 9, 2, '#fff') } });
+    const it = getState().items;
+    expect((it.a as StickyItem).text).toBe('из версии');
+    expect(it.a.x).toBe(500); // наша правка в пути — сервер применит её после сброса
+    expect(it.b).toBeDefined();
+    expect(getState().canUndo).toBe(false);
+    expect(getState().toast?.text).toBe('Восстановлено');
+  });
+
+  it('нельзя начать ввод в объекте, который редактирует другой участник', () => {
+    load({ s1: makeSticky('s1', 0, 0, 1, '#fff') });
+    useBoard.setState({
+      peers: { c2: { clientId: 'c2', id: 'u2', name: 'Борис', color: '#000', cursor: null, selection: [], editing: 's1', view: null } },
+    });
+    startEditing('s1');
+    expect(getState().editingId).toBeNull();
+    expect(getState().toast?.text).toBe('Сейчас редактирует Борис');
+  });
+
+  it('во время голосования ввод недоступен; завершение открывает итоги', () => {
+    load({ s1: makeSticky('s1', 0, 0, 1, '#fff') });
+    const voting = { id: 'v', status: 'active', votesPerUser: 3, startedBy: 'A', startedAt: 0, endedAt: null, myVotes: {}, voters: 0, results: null };
+    onMessage({ t: 'session', now: Date.now(), session: { timer: null, voting } });
+    startEditing('s1');
+    expect(getState().editingId).toBeNull();
+    onMessage({ t: 'session', now: Date.now(), session: { timer: null, voting: { ...voting, status: 'ended', results: { s1: 2 } } } });
+    expect(getState().panel).toBe('results');
+  });
+
+  it('выравнивание переносит содержимое фрейма вместе с ним — одним шагом', () => {
+    load({
+      f: makeFrame('f', 100, 0, 300, 300, 1, 'F'),
+      inner: makeSticky('inner', 150, 50, 2, '#fff'),
+      s: makeSticky('s', 0, 400, 3, '#fff'),
+    });
+    useBoard.setState({ selection: ['f', 's'] });
+    alignSelection('left');
+    const it = getState().items;
+    expect(it.f.x).toBe(0);
+    expect(it.inner.x).toBe(50);
+    expect(it.s.x).toBe(0);
+    board.undo();
+    expect(getState().items.f.x).toBe(100);
+    expect(getState().items.inner.x).toBe(150);
+  });
+
+  it('вставка шаблона — новые объекты одним шагом отмены', () => {
+    insertTemplate('kanban');
+    const n = Object.keys(getState().items).length;
+    expect(n).toBeGreaterThan(10);
+    board.undo();
+    expect(Object.keys(getState().items)).toHaveLength(0);
+  });
+
+  it('ссылки: адрес без схемы дополняется https://, опасные отклоняются', () => {
+    load({ s1: makeSticky('s1', 0, 0, 1, '#fff') });
+    expect(setLink('s1', 'example.com/a')).toBe(true);
+    expect(getState().items.s1.link).toBe('https://example.com/a');
+    expect(setLink('s1', 'javascript:alert(1)')).toBe(false);
+    expect(setLink('s1', 'mailto:a@b.c')).toBe(false);
+    expect(setLink('s1', 'localhost:3000/board')).toBe(true); // порт — не схема
+    expect(getState().items.s1.link).toBe('https://localhost:3000/board');
+    expect(setLink('s1', null)).toBe(true);
+    expect(getState().items.s1.link).toBeNull();
   });
 });

@@ -29,11 +29,13 @@ import {
   quickCreate,
   setSelection,
   setTool,
+  startComment,
   startEditing,
   stopEditing,
+  VOTABLE_TYPES,
 } from './actions';
 import { board } from './controller';
-import { type Camera, getState, type Guide, screenToWorld, setState } from './store';
+import { type Camera, getState, type Guide, screenToWorld, setState, votingActive } from './store';
 import { textBlockHeight } from './text';
 
 export type Handle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
@@ -96,6 +98,9 @@ export class Interactions {
     if (e.button === 2) return;
     const target = e.target as Element;
     if (target.closest('[data-editor]')) return;
+    // в режиме презентации холст не редактируется
+    if (getState().presenting) return;
+    if (getState().contextMenu) setState({ contextMenu: null });
     // поля ввода вне холста (имя доски и т. п.) теряют фокус, т.к. mousedown по холсту отменён
     const ae = document.activeElement as HTMLElement | null;
     if (ae && ae !== document.body && !ae.closest('[data-editor]')) ae.blur();
@@ -125,6 +130,19 @@ export class Interactions {
     const w = screenToWorld(st.camera, p);
 
     if (e.button === 1 || st.tool === 'hand' || st.spacePan) {
+      this.mode = { kind: 'pan', sx: e.clientX, sy: e.clientY, cam: st.camera };
+      setState({ panning: true });
+      return;
+    }
+
+    // Режим голосования: клик по объекту — голос (Alt — снять), перетаскивание — сдвиг вида
+    if (votingActive(st)) {
+      const el = target.closest<HTMLElement>('[data-id]');
+      const item = el && !el.dataset.frameBody ? st.items[el.dataset.id!] : undefined;
+      if (item && VOTABLE_TYPES.has(item.type)) {
+        board.vote(item.id, e.altKey ? -1 : 1);
+        return;
+      }
       this.mode = { kind: 'pan', sx: e.clientX, sy: e.clientY, cam: st.camera };
       setState({ panning: true });
       return;
@@ -201,6 +219,12 @@ export class Interactions {
           sy: e.clientY,
           id: null,
         };
+        return;
+      }
+      case 'comment': {
+        // у инструментов, кроме «Выбора», объекты не получают событий — ищем объект геометрически
+        startComment(w, this.itemAt(w)?.id ?? null);
+        setState({ tool: 'select' });
         return;
       }
       case 'pen':
@@ -634,6 +658,19 @@ export class Interactions {
     return best;
   }
 
+  /** Верхний объект под точкой для привязки комментария: фреймы — только если больше ничего нет. */
+  private itemAt(w: Pt): Item | null {
+    const { items } = getState();
+    let best: Item | null = null;
+    const rank = (it: Item) => (it.type === 'frame' ? 0 : 1);
+    for (const id in items) {
+      const it = items[id];
+      if (it.type === 'connector' || it.type === 'path' || !pointInRect(w, it)) continue;
+      if (!best || rank(it) > rank(best) || (rank(it) === rank(best) && it.z > best.z)) best = it;
+    }
+    return best;
+  }
+
   private itemsInRect(rect: Rect, items: ItemMap): string[] {
     const out: string[] = [];
     for (const id in items) {
@@ -661,10 +698,12 @@ export class Interactions {
   }
 
   doubleClick(e: MouseEvent) {
-    const target = e.target as Element;
-    if (target.closest('[data-editor]') || target.closest('[data-handle]')) return;
+    // Из-за захвата указателя (setPointerCapture) click/dblclick адресуются самому холсту,
+    // поэтому объект под курсором ищем по координатам, а не по e.target.
+    const target = document.elementFromPoint(e.clientX, e.clientY) ?? (e.target as Element);
+    if (target.closest('[data-editor]') || target.closest('[data-handle]') || target.closest('[data-ui]')) return;
     const st = getState();
-    if (st.tool !== 'select') return;
+    if (st.tool !== 'select' || st.presenting || votingActive(st)) return;
     const el = target.closest<HTMLElement>('[data-id]');
     const id = el?.dataset.id;
     const item = id ? st.items[id] : undefined;
@@ -682,6 +721,8 @@ export class Interactions {
   wheel(e: WheelEvent) {
     e.preventDefault();
     const st = getState();
+    if (st.presenting) return;
+    if (st.contextMenu) setState({ contextMenu: null });
     if (e.ctrlKey || e.metaKey) {
       const factor = Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0025));
       board.zoomAt(st.camera.zoom * factor, this.local(e));
@@ -710,6 +751,23 @@ export class Interactions {
   leave() {
     board.sendCursor(null);
     setState({ eraser: null });
+  }
+
+  /** Правый клик или долгое нажатие: выделить объект под курсором и открыть меню. */
+  contextMenu(e: MouseEvent) {
+    e.preventDefault();
+    const st = getState();
+    if (st.presenting || votingActive(st) || this.active) return;
+    if (st.editingId) stopEditing();
+    const target = e.target as Element;
+    if (target.closest('[data-ui]')) return;
+    const el = target.closest<HTMLElement>('[data-id]');
+    const item = el && !el.dataset.frameBody ? st.items[el.dataset.id!] : undefined;
+    // по объекту — меню выделения, по пустому месту — меню холста
+    if (item && !st.selection.includes(item.id)) setSelection(expandGroups([item.id]));
+    if (!item) setSelection([]);
+    const p = this.local(e);
+    setState({ contextMenu: { x: p.x, y: p.y, world: screenToWorld(st.camera, p), onItem: !!item }, tool: 'select' });
   }
 
   resetTool() {

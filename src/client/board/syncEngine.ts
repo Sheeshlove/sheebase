@@ -115,6 +115,16 @@ export class SyncEngine {
     return this.unacked.map((b) => ({ seq: b.seq, ops: b.ops }));
   }
 
+  /**
+   * Все локальные операции, ещё не подтверждённые сервером (отправленные и текущий пакет),
+   * без изменения состояния. Нужны при восстановлении версии: сервер применит их после сброса.
+   */
+  outstanding(): Op[][] {
+    const out = this.unacked.map((b) => b.ops);
+    if (this.batch) out.push(this.batch.ops);
+    return out;
+  }
+
   get pendingCount(): number {
     return this.pending.size;
   }

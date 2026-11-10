@@ -155,8 +155,12 @@ export function Dashboard() {
           <div className="board-grid">
             {filtered.map((b) => (
               <div key={b.id} className="board-card" data-testid="board-card">
-                <a href={`#/b/${b.id}`} className="board-thumb" aria-label={`Открыть ${b.name}`}>
-                  <span>{b.name.slice(0, 1).toUpperCase()}</span>
+                <a href={`#/b/${b.id}`} className={`board-thumb ${b.itemCount ? 'has-preview' : ''}`} aria-label={`Открыть ${b.name}`}>
+                  {b.itemCount ? (
+                    <img src={`/api/boards/${b.id}/thumbnail.svg?v=${b.updatedAt}`} alt="" loading="lazy" data-testid="board-thumbnail" />
+                  ) : (
+                    <span>{b.name.slice(0, 1).toUpperCase()}</span>
+                  )}
                 </a>
                 <div className="board-info">
                   {renaming === b.id ? (

@@ -1,7 +1,20 @@
 import { boundsOf, type Pt, type Rect } from '../../shared/geometry';
 import { applyOps, diffItems, opTargetId } from '../../shared/ops';
-import type { Item, ItemMap, Op, Peer, ServerMessage, UserInfo } from '../../shared/types';
-import { getUser } from '../user';
+import type {
+  ClientMessage,
+  CommentAction,
+  Item,
+  ItemMap,
+  Op,
+  Peer,
+  PeerPresence,
+  ServerMessage,
+  TimerAction,
+  UserInfo,
+  ViewRect,
+  VotingAction,
+} from '../../shared/types';
+import { getUser, subscribeUser } from '../user';
 import {
   type Camera,
   getState,
@@ -9,7 +22,9 @@ import {
   MAX_ZOOM,
   MIN_ZOOM,
   type PeerState,
+  screenToWorld,
   setState,
+  showToast,
   useBoard,
 } from './store';
 import { SyncEngine } from './syncEngine';
@@ -24,12 +39,24 @@ interface HistoryEntry {
 const HISTORY_LIMIT = 300;
 const FLUSH_MS = 30;
 const CURSOR_MS = 40;
+const VIEW_MS = 150;
 
-const peerState = (p: Peer): PeerState => ({ ...p, cursor: null, selection: [] });
+const peerState = (p: Peer & Partial<Pick<PeerPresence, 'view' | 'selection' | 'editing'>>): PeerState => ({
+  clientId: p.clientId,
+  id: p.id,
+  name: p.name,
+  color: p.color,
+  cursor: null,
+  selection: p.selection ?? [],
+  editing: p.editing ?? null,
+  view: p.view ?? null,
+});
+
+export type CameraSource = 'user' | 'follow';
 
 /**
  * Контроллер открытой доски: локальные изменения (транзакции + история),
- * синхронизация через WebSocket, присутствие участников.
+ * синхронизация через WebSocket, присутствие участников, сессионные данные.
  */
 class BoardController {
   private engine = new SyncEngine();
@@ -45,9 +72,14 @@ class BoardController {
   private pendingCursor: Pt | null | undefined = undefined;
   private selectionTimer: ReturnType<typeof setTimeout> | null = null;
   private cameraTimer: ReturnType<typeof setTimeout> | null = null;
+  private viewTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastView = '';
   private unsubscribe: (() => void) | null = null;
+  private unsubscribeUser: (() => void) | null = null;
   /** Переименование, сделанное без связи, — отправляется после переподключения. */
   private pendingRename: string | null = null;
+  /** Ждём свой только что созданный тред, чтобы сразу открыть его. */
+  private expectOwnThread = false;
   /** При закрытии вкладки досылаем пакет, ещё не ушедший по таймеру (до 30 мс правок). */
   private readonly onPageHide = () => this.flush();
 
@@ -58,6 +90,13 @@ class BoardController {
 
   /** Последняя позиция указателя над холстом (мировые координаты) — для вставки. */
   pointer: Pt | null = null;
+  /** Подписчики на сброс доски (восстановление версии) — например, прервать текущий жест. */
+  private resetListeners = new Set<() => void>();
+
+  onReset(fn: () => void): () => void {
+    this.resetListeners.add(fn);
+    return () => this.resetListeners.delete(fn);
+  }
 
   // ------------------------------------------------------------------ жизненный цикл
 
@@ -72,6 +111,8 @@ class BoardController {
     this.tx = null;
     this.txDepth = 0;
     this.pendingRename = null;
+    this.expectOwnThread = false;
+    this.lastView = '';
     setState({ canUndo: false, canRedo: false });
   }
 
@@ -90,12 +131,19 @@ class BoardController {
         penWidth: keep.penWidth,
         shapeKind: keep.shapeKind,
         connectorStyle: keep.connectorStyle,
+        seen: this.loadSeen(boardId),
       },
       true,
     );
     this.unsubscribe = useBoard.subscribe((s, prev) => {
-      if (s.selection !== prev.selection) this.scheduleSelection();
+      if (s.selection !== prev.selection || s.editingId !== prev.editingId) this.scheduleSelection();
       if (s.camera !== prev.camera) this.scheduleCameraSave();
+      if (s.camera !== prev.camera || s.viewport !== prev.viewport) this.scheduleView();
+    });
+    // смена имени или цвета видна коллегам сразу
+    this.unsubscribeUser = subscribeUser(() => {
+      const u = getUser();
+      this.send({ t: 'user', user: { name: u.name, color: u.color } });
     });
     window.addEventListener('pagehide', this.onPageHide);
     this.connect();
@@ -105,11 +153,13 @@ class BoardController {
     this.disposed = true;
     this.unsubscribe?.();
     this.unsubscribe = null;
+    this.unsubscribeUser?.();
+    this.unsubscribeUser = null;
     if (typeof window !== 'undefined') window.removeEventListener('pagehide', this.onPageHide);
-    for (const t of [this.reconnectTimer, this.flushTimer, this.cursorTimer, this.selectionTimer, this.cameraTimer]) {
+    for (const t of [this.reconnectTimer, this.flushTimer, this.cursorTimer, this.selectionTimer, this.cameraTimer, this.viewTimer]) {
       if (t) clearTimeout(t);
     }
-    this.reconnectTimer = this.flushTimer = this.cursorTimer = this.selectionTimer = this.cameraTimer = null;
+    this.reconnectTimer = this.flushTimer = this.cursorTimer = this.selectionTimer = this.cameraTimer = this.viewTimer = null;
     if (this.ws) {
       this.flush();
       const ws = this.ws;
@@ -148,7 +198,7 @@ class BoardController {
       this.ws = null;
       this.ready = false;
       if (this.disposed || this.fatal) return;
-      setState({ status: 'offline', peers: {} });
+      setState({ status: 'offline', peers: {}, following: null });
       this.reconnectTimer = setTimeout(() => this.connect(), this.reconnectDelay);
       this.reconnectDelay = Math.min(this.reconnectDelay * 2, 10_000);
     };
@@ -162,8 +212,24 @@ class BoardController {
     this.connect();
   }
 
-  private send(msg: unknown) {
+  private send(msg: ClientMessage) {
     if (this.ws && this.ready && this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
+  }
+
+  /** Сервер-авторитетное действие: без связи его некуда отправить — сообщаем об этом. */
+  private sendAction(msg: ClientMessage): boolean {
+    if (!this.ready) {
+      showToast('Нет связи с сервером — действие не выполнено');
+      return false;
+    }
+    this.send(msg);
+    return true;
+  }
+
+  private updatePeer(clientId: string, patch: Partial<PeerState>) {
+    const peers = getState().peers;
+    const p = peers[clientId];
+    if (p) setState({ peers: { ...peers, [clientId]: { ...p, ...patch } } });
   }
 
   private onMessage(msg: ServerMessage) {
@@ -185,6 +251,10 @@ class BoardController {
           error: null,
           selection: st.selection.filter((id) => items[id]),
           editingId: st.editingId && items[st.editingId] ? st.editingId : null,
+          comments: msg.comments,
+          session: msg.session,
+          serverOffset: msg.now - Date.now(),
+          following: st.following && peers[st.following] ? st.following : null,
         });
         if (st.editingId && !items[st.editingId]) this.commit();
         this.ready = true;
@@ -196,11 +266,13 @@ class BoardController {
           setState({ meta: { ...msg.meta, name } });
           this.send({ t: 'rename', name });
         }
-        this.send({ t: 'selection', ids: getState().selection });
+        this.send({ t: 'selection', ids: getState().selection, editing: getState().editingId });
         if (!this.hadInit) {
           this.hadInit = true;
           this.restoreCamera();
         }
+        this.lastView = '';
+        this.sendView();
         break;
       }
       case 'ack':
@@ -220,31 +292,104 @@ class BoardController {
         if (editedGone) this.commit();
         break;
       }
+      case 'reset': {
+        // Восстановление версии: свежий снимок + наши ещё не подтверждённые правки
+        // (сервер применит их после восстановления). История ссылается на прежнее состояние — очищается.
+        let items = msg.items;
+        for (const ops of this.engine.outstanding()) items = applyOps(items, ops);
+        this.tx = null;
+        this.txDepth = 0;
+        this.undoStack = [];
+        this.redoStack = [];
+        const st = getState();
+        setState({
+          items,
+          selection: st.selection.filter((id) => items[id]),
+          editingId: null,
+          canUndo: false,
+          canRedo: false,
+        });
+        showToast(msg.reason);
+        for (const fn of this.resetListeners) fn();
+        break;
+      }
       case 'join':
         setState({ peers: { ...getState().peers, [msg.peer.clientId]: peerState(msg.peer) } });
         break;
       case 'leave': {
-        const peers = { ...getState().peers };
+        const st = getState();
+        const peers = { ...st.peers };
+        const gone = peers[msg.clientId];
         delete peers[msg.clientId];
         setState({ peers });
+        if (st.following === msg.clientId) {
+          setState({ following: null });
+          if (gone) showToast(`${gone.name} покидает доску — следование остановлено`);
+        }
         break;
       }
-      case 'cursor': {
-        const peers = getState().peers;
-        const p = peers[msg.from];
-        if (!p) break;
-        const cursor = msg.x === null || msg.y === null ? null : { x: msg.x, y: msg.y };
-        setState({ peers: { ...peers, [msg.from]: { ...p, cursor } } });
+      case 'peer':
+        this.updatePeer(msg.peer.clientId, { name: msg.peer.name, color: msg.peer.color });
         break;
-      }
-      case 'selection': {
-        const peers = getState().peers;
-        const p = peers[msg.from];
-        if (p) setState({ peers: { ...peers, [msg.from]: { ...p, selection: msg.ids } } });
+      case 'cursor':
+        this.updatePeer(msg.from, { cursor: msg.x === null || msg.y === null ? null : { x: msg.x, y: msg.y } });
+        break;
+      case 'selection':
+        this.updatePeer(msg.from, { selection: msg.ids, editing: msg.editing ?? null });
+        break;
+      case 'view':
+        this.updatePeer(msg.from, { view: msg.rect });
+        if (getState().following === msg.from) this.applyFollow(msg.rect);
+        break;
+      case 'summon': {
+        const p = getState().peers[msg.from];
+        if (!p || getState().presenting) break;
+        this.follow(msg.from);
+        showToast(`Вы следуете за участником ${p.name}. Esc — перестать`);
         break;
       }
       case 'meta':
         setState({ meta: msg.meta });
+        break;
+      case 'session': {
+        const st = getState();
+        const was = st.session.voting?.status;
+        const now = msg.session.voting?.status;
+        const patch: Partial<typeof st> = { session: msg.session, serverOffset: msg.now - Date.now() };
+        if (now === 'active' && was !== 'active') {
+          // на время голосования доска «замораживается»
+          patch.tool = 'select';
+          showToast(`Голосование началось: ${msg.session.voting!.votesPerUser} голос(а) на участника`);
+        }
+        if (now === 'ended' && was === 'active') {
+          patch.panel = 'results';
+          showToast('Голосование завершено — итоги на панели справа');
+        }
+        if (!msg.session.voting && st.panel === 'results') patch.panel = null;
+        setState(patch);
+        break;
+      }
+      case 'thread': {
+        const st = getState();
+        const isNew = !st.comments[msg.thread.id];
+        const patch: Partial<typeof st> = { comments: { ...st.comments, [msg.thread.id]: msg.thread } };
+        if (isNew && this.expectOwnThread && msg.thread.messages[0]?.authorId === getUser().id) {
+          this.expectOwnThread = false;
+          patch.openThreadId = msg.thread.id;
+        }
+        setState(patch);
+        if (getState().openThreadId === msg.thread.id) this.markSeen(msg.thread.id);
+        break;
+      }
+      case 'thread-delete': {
+        const st = getState();
+        const comments = { ...st.comments };
+        delete comments[msg.id];
+        setState({ comments, openThreadId: st.openThreadId === msg.id ? null : st.openThreadId });
+        break;
+      }
+      case 'notice':
+        showToast(msg.message);
         break;
       case 'error':
         if (msg.code === 'not_found' || msg.code === 'deleted') {
@@ -294,8 +439,35 @@ class BoardController {
     if (this.selectionTimer) return;
     this.selectionTimer = setTimeout(() => {
       this.selectionTimer = null;
-      this.send({ t: 'selection', ids: getState().selection });
+      const st = getState();
+      this.send({ t: 'selection', ids: st.selection, editing: st.editingId });
     }, 60);
+  }
+
+  /** Видимая область в мировых координатах (для следования за участником). */
+  private currentView(): ViewRect | null {
+    const { camera, viewport } = getState();
+    if (viewport.w <= 1 || viewport.h <= 1) return null;
+    const tl = screenToWorld(camera, { x: 0, y: 0 });
+    const r = (v: number) => Math.round(v * 10) / 10;
+    return { x: r(tl.x), y: r(tl.y), w: r(viewport.w / camera.zoom), h: r(viewport.h / camera.zoom) };
+  }
+
+  private sendView() {
+    const rect = this.currentView();
+    if (!rect || !this.ready) return;
+    const key = JSON.stringify(rect);
+    if (key === this.lastView) return;
+    this.lastView = key;
+    this.send({ t: 'view', rect });
+  }
+
+  private scheduleView() {
+    if (this.viewTimer) return;
+    this.viewTimer = setTimeout(() => {
+      this.viewTimer = null;
+      this.sendView();
+    }, VIEW_MS);
   }
 
   rename(name: string) {
@@ -303,6 +475,80 @@ class BoardController {
     if (meta) setState({ meta: { ...meta, name } });
     if (this.ready) this.send({ t: 'rename', name });
     else this.pendingRename = name;
+  }
+
+  // ------------------------------------------------------------------ сессионные действия
+
+  timer(action: TimerAction) {
+    this.sendAction({ t: 'timer', ...action });
+  }
+
+  voting(action: VotingAction) {
+    this.sendAction({ t: 'voting', ...action });
+  }
+
+  vote(itemId: string, delta: 1 | -1) {
+    this.sendAction({ t: 'vote', itemId, delta });
+  }
+
+  comment(action: CommentAction) {
+    if (action.action === 'create') this.expectOwnThread = true;
+    this.sendAction({ t: 'comment', ...action });
+  }
+
+  summon() {
+    if (this.sendAction({ t: 'summon' })) showToast('Участники следуют за вашим видом');
+  }
+
+  // ------------------------------------------------------------------ следование
+
+  follow(clientId: string) {
+    const p = getState().peers[clientId];
+    if (!p) return;
+    setState({ following: clientId });
+    if (p.view) this.applyFollow(p.view);
+  }
+
+  stopFollowing() {
+    if (getState().following) setState({ following: null });
+  }
+
+  /** Вписать область ведущего: центр совпадает, масштаб — по меньшей стороне. */
+  private applyFollow(rect: ViewRect) {
+    const { viewport } = getState();
+    const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.min(viewport.w / rect.w, viewport.h / rect.h)));
+    this.setCamera(
+      { x: viewport.w / 2 - (rect.x + rect.w / 2) * zoom, y: viewport.h / 2 - (rect.y + rect.h / 2) * zoom, zoom },
+      'follow',
+    );
+  }
+
+  // ------------------------------------------------------------------ комментарии: прочитанные
+
+  private seenKey(boardId: string) {
+    return `sheebase:seen:${boardId}`;
+  }
+
+  private loadSeen(boardId: string): Record<string, number> {
+    try {
+      const raw = JSON.parse(localStorage.getItem(this.seenKey(boardId)) ?? '{}');
+      return raw && typeof raw === 'object' ? raw : {};
+    } catch {
+      return {};
+    }
+  }
+
+  markSeen(threadId: string) {
+    const st = getState();
+    const t = st.comments[threadId];
+    if (!t || (st.seen[threadId] ?? 0) >= t.updatedAt) return;
+    const seen = { ...st.seen, [threadId]: t.updatedAt };
+    setState({ seen });
+    try {
+      if (st.boardId) localStorage.setItem(this.seenKey(st.boardId), JSON.stringify(seen));
+    } catch {
+      /* без сохранения */
+    }
   }
 
   // ------------------------------------------------------------------ изменения и история
@@ -416,7 +662,9 @@ class BoardController {
 
   // ------------------------------------------------------------------ камера
 
-  setCamera(cam: Camera) {
+  /** `source = 'follow'` — программное движение при следовании; любое другое движение следование отключает. */
+  setCamera(cam: Camera, source: CameraSource = 'user') {
+    if (source === 'user' && getState().following) setState({ following: null });
     setState({ camera: { x: cam.x, y: cam.y, zoom: Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, cam.zoom)) } });
   }
 
@@ -430,13 +678,12 @@ class BoardController {
   }
 
   /** Показать прямоугольник мира в видимой области. */
-  fitRect(r: Rect | null, maxZoom = 1) {
+  fitRect(r: Rect | null, maxZoom = 1, pad = 80) {
     const { viewport } = getState();
     if (!r) {
       this.setCamera({ x: viewport.w / 2, y: viewport.h / 2, zoom: 1 });
       return;
     }
-    const pad = 80;
     const zoom = Math.min(
       maxZoom,
       Math.max(MIN_ZOOM, Math.min((viewport.w - pad * 2) / Math.max(r.w, 1), (viewport.h - pad * 2) / Math.max(r.h, 1))),

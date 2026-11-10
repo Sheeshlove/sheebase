@@ -3,6 +3,9 @@ import {
   Frame,
   Hand,
   ImagePlus,
+  LayoutTemplate,
+  ListOrdered,
+  MessageSquarePlus,
   MousePointer2,
   PenLine,
   Redo2,
@@ -16,9 +19,10 @@ import { type ReactNode, useRef } from 'react';
 import { PALETTE, SHAPE_KINDS, STICKY_COLORS } from '../../shared/defaults';
 import { shapePath } from '../../shared/geometry';
 import type { LineStyle, ShapeKind } from '../../shared/types';
-import { Swatches } from '../ui/Popover';
-import { insertImageFile, redo, setTool, undo } from './actions';
-import { setState, type Tool, useBoard } from './store';
+import { TEMPLATES } from '../../shared/templates';
+import { Popover, Swatches } from '../ui/Popover';
+import { insertImageFile, insertTemplate, redo, setTool, undo } from './actions';
+import { getState, setState, type Tool, useBoard, votingActive } from './store';
 
 function ToolButton({
   tool,
@@ -165,8 +169,57 @@ export function Toolbar() {
         <ToolButton tool="pen" icon={<PenLine size={20} />} label="Перо" hotkey="P" />
         <ToolButton tool="eraser" icon={<Eraser size={20} />} label="Ластик" hotkey="E" />
         <ToolButton tool="frame" icon={<Frame size={20} />} label="Фрейм" hotkey="F" />
+        <ToolButton tool="comment" icon={<MessageSquarePlus size={20} />} label="Комментарий" hotkey="C" />
         <button type="button" className="tool-btn" title="Изображение" aria-label="Изображение" onClick={() => fileRef.current?.click()}>
           <ImagePlus size={20} />
+        </button>
+        <Popover
+          placement="right"
+          trigger={(_o, toggle) => (
+            <button
+              type="button"
+              className="tool-btn"
+              title="Вставить шаблон"
+              aria-label="Вставить шаблон"
+              onClick={() => (votingActive() ? undefined : toggle())}
+              data-testid="templates-button"
+            >
+              <LayoutTemplate size={20} />
+            </button>
+          )}
+        >
+          {(close) => (
+            <div className="list">
+              <div className="list-title">Вставить шаблон в центр экрана</div>
+              {TEMPLATES.filter((t) => t.id !== 'blank').map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className="list-item"
+                  data-testid={`insert-template-${t.id}`}
+                  onClick={() => {
+                    close();
+                    insertTemplate(t.id);
+                  }}
+                >
+                  <div>
+                    <div>{t.name}</div>
+                    <div className="muted small-text">{t.description}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </Popover>
+        <button
+          type="button"
+          className="tool-btn"
+          title="Фреймы и презентация"
+          aria-label="Фреймы и презентация"
+          onClick={() => setState({ panel: getState().panel === 'frames' ? null : 'frames' })}
+          data-testid="frames-button"
+        >
+          <ListOrdered size={20} />
         </button>
         <input
           ref={fileRef}

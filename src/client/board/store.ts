@@ -1,9 +1,21 @@
 import { create } from 'zustand';
 import { STICKY_COLORS } from '../../shared/defaults';
 import type { Pt, Rect } from '../../shared/geometry';
-import type { BoardMeta, ItemMap, LineStyle, Peer, ShapeKind } from '../../shared/types';
+import type {
+  BoardMeta,
+  CommentThread,
+  ItemMap,
+  LineStyle,
+  Peer,
+  SessionView,
+  ShapeKind,
+  ViewRect,
+} from '../../shared/types';
 
-export type Tool = 'select' | 'hand' | 'sticky' | 'text' | 'shape' | 'connector' | 'pen' | 'eraser' | 'frame';
+export type Tool = 'select' | 'hand' | 'sticky' | 'text' | 'shape' | 'connector' | 'pen' | 'eraser' | 'frame' | 'comment';
+
+/** Боковая панель справа (одна за раз). */
+export type Panel = 'comments' | 'frames' | 'versions' | 'results' | null;
 
 export interface Camera {
   /** Сдвиг (экранные px) и масштаб: screen = world * zoom + (x, y). */
@@ -15,6 +27,10 @@ export interface Camera {
 export interface PeerState extends Peer {
   cursor: Pt | null;
   selection: string[];
+  /** Объект, который участник сейчас редактирует. */
+  editing: string | null;
+  /** Видимая область участника (для следования). */
+  view: ViewRect | null;
 }
 
 export interface Guide {
@@ -66,6 +82,27 @@ export interface BoardState {
   showMinimap: boolean;
   showHelp: boolean;
   toast: { id: number; text: string } | null;
+
+  // ---- итерация 2 ----
+  /** Комментарии (сервер-авторитетные). */
+  comments: Record<string, CommentThread>;
+  /** Таймер и голосование глазами этого участника. */
+  session: SessionView;
+  /** Смещение часов: время сервера − время клиента, мс. */
+  serverOffset: number;
+  /** clientId участника, за видом которого мы следуем. */
+  following: string | null;
+  search: { open: boolean; query: string; index: number; hits: string[] };
+  /** Режим презентации: индекс текущего фрейма. */
+  presenting: { index: number } | null;
+  panel: Panel;
+  openThreadId: string | null;
+  commentDraft: { x: number; y: number; itemId: string | null } | null;
+  contextMenu: { x: number; y: number; world: Pt; onItem: boolean } | null;
+  /** Время последнего просмотра тредов (для «непрочитано»). */
+  seen: Record<string, number>;
+  showAuthors: boolean;
+  showResolved: boolean;
 }
 
 export const MIN_ZOOM = 0.1;
@@ -104,8 +141,45 @@ export function initialBoardState(): BoardState {
     showMinimap: true,
     showHelp: false,
     toast: null,
+    comments: {},
+    session: { timer: null, voting: null },
+    serverOffset: 0,
+    following: null,
+    search: { open: false, query: '', index: 0, hits: [] },
+    presenting: null,
+    panel: null,
+    openThreadId: null,
+    commentDraft: null,
+    contextMenu: null,
+    seen: {},
+    showAuthors: readPref('showAuthors', false),
+    showResolved: false,
   };
 }
+
+/** Настройки вида, которые помнит браузер. */
+export function readPref(key: string, fallback: boolean): boolean {
+  try {
+    const v = localStorage.getItem(`sheebase:pref:${key}`);
+    return v === null ? fallback : v === '1';
+  } catch {
+    return fallback;
+  }
+}
+
+export function writePref(key: string, value: boolean) {
+  try {
+    localStorage.setItem(`sheebase:pref:${key}`, value ? '1' : '0');
+  } catch {
+    /* без сохранения */
+  }
+}
+
+/** Голосование идёт — доска в режиме голосования. */
+export const votingActive = (s: BoardState = useBoard.getState()) => s.session.voting?.status === 'active';
+
+/** Текущее время по часам сервера. */
+export const serverNow = (s: BoardState = useBoard.getState()) => Date.now() + s.serverOffset;
 
 export const useBoard = create<BoardState>(() => initialBoardState());
 

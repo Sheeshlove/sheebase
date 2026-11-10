@@ -10,17 +10,21 @@ import {
 import {
   boundsOf,
   frameChildren,
+  itemBounds,
   type Pt,
   rectCenter,
   rectsIntersect,
   resolveEnds,
   SIDE_NORMAL,
 } from '../../shared/geometry';
+import { type AlignMode, alignDeltas, type Delta, distributeDeltas, frameOrder } from '../../shared/layout';
 import { uid } from '../../shared/ops';
-import type { Item, ItemMap, ItemPatch, Op, ShapeKind, Side } from '../../shared/types';
-import { sanitizeItem } from '../../shared/validate';
+import { buildTemplate } from '../../shared/templates';
+import type { CommentThread, Item, ItemMap, ItemPatch, Op, ShapeKind, Side } from '../../shared/types';
+import { isLink, sanitizeItem } from '../../shared/validate';
+import { getUser } from '../user';
 import { board } from './controller';
-import { getState, screenToWorld, setState, showToast, type Tool } from './store';
+import { getState, screenToWorld, setState, showToast, type Tool, votingActive } from './store';
 import { textBlockHeight } from './text';
 
 // ------------------------------------------------------------------ выборки
@@ -54,6 +58,10 @@ export function selectedItems(): Item[] {
 
 export function setTool(tool: Tool) {
   const st = getState();
+  if (votingActive(st) && tool !== 'select' && tool !== 'hand') {
+    showToast('Идёт голосование — редактирование доски недоступно');
+    return;
+  }
   if (st.editingId) stopEditing();
   setState({ tool, eraser: null, selection: tool === 'select' || tool === 'hand' ? st.selection : [] });
 }
@@ -137,7 +145,9 @@ export function addItems(items: Item[], select = true) {
 export function createSticky(center: Pt, text = ''): string {
   const st = getState();
   const id = uid();
-  addItems([makeSticky(id, Math.round(center.x - STICKY_SIZE / 2), Math.round(center.y - STICKY_SIZE / 2), nextZ(), st.stickyColor, text)]);
+  const sticky = makeSticky(id, Math.round(center.x - STICKY_SIZE / 2), Math.round(center.y - STICKY_SIZE / 2), nextZ(), st.stickyColor, text);
+  sticky.author = getUser().name;
+  addItems([sticky]);
   return id;
 }
 
@@ -168,11 +178,23 @@ export function canEditText(it: Item | undefined): boolean {
   return !!it && !it.locked && ['sticky', 'shape', 'text', 'frame', 'connector'].includes(it.type);
 }
 
+/** Участник, который сейчас редактирует объект (если это не мы). */
+export function editedBy(id: string): string | null {
+  for (const p of Object.values(getState().peers)) if (p.editing === id) return p.name;
+  return null;
+}
+
 export function startEditing(id: string) {
   const st = getState();
   const it = st.items[id];
   if (!canEditText(it)) return;
   if (st.editingId === id) return;
+  if (votingActive(st)) return;
+  const other = editedBy(id);
+  if (other) {
+    showToast(`Сейчас редактирует ${other}`);
+    return;
+  }
   if (st.editingId) stopEditing();
   board.begin();
   setState({ editingId: id, selection: [id] });
@@ -306,15 +328,41 @@ export function duplicateSelection() {
 
 const CLIP_KIND = 'sheebase/items';
 
+/** Последнее скопированное — запасной буфер для контекстного меню, если браузер не даёт читать системный. */
+let internalClipboard: string | null = null;
+
 export function serializeSelection(): string | null {
   const items = collectForCopy();
   if (!items.length) return null;
-  return JSON.stringify({ kind: CLIP_KIND, version: 1, items });
+  const data = JSON.stringify({ kind: CLIP_KIND, version: 1, items });
+  internalClipboard = data;
+  return data;
+}
+
+/** Копирование из контекстного меню (без события copy): системный буфер + внутренний. */
+export function copySelectionToClipboard(cut = false) {
+  const data = serializeSelection();
+  if (!data) return;
+  void navigator.clipboard?.writeText(data).catch(() => undefined);
+  if (cut) deleteSelection();
+  else showToast('Скопировано');
+}
+
+/** Вставка из контекстного меню: системный буфер, при отказе браузера — внутренний. */
+export async function pasteFromClipboard(at?: Pt) {
+  let text: string | null = null;
+  try {
+    text = (await navigator.clipboard?.readText()) ?? null;
+  } catch {
+    text = null;
+  }
+  text = text || internalClipboard;
+  if (!text || !pasteText(text, at)) showToast('Буфер обмена пуст');
 }
 
 /** Вставка из буфера: объекты доски, изображение или текст. Возвращает true, если что-то вставлено. */
-export function pasteText(text: string): boolean {
-  const at = board.pointer ?? viewportCenterWorld();
+export function pasteText(text: string, point?: Pt): boolean {
+  const at = point ?? board.pointer ?? viewportCenterWorld();
   try {
     const data = JSON.parse(text);
     if (data && (data.kind === CLIP_KIND || data.kind === 'sheebase/board') && Array.isArray(data.items)) {
@@ -335,6 +383,157 @@ export function pasteText(text: string): boolean {
   createSticky(at, trimmed.slice(0, 5000));
   return true;
 }
+
+// ------------------------------------------------------------------ выравнивание и распределение
+
+/** Операции сдвига по карте дельт: фрейм переносит своё содержимое, у коннекторов двигаются свободные концы. */
+export function deltaOps(deltas: Map<string, Delta>, items: ItemMap): Op[] {
+  const all = new Map(deltas);
+  for (const [id, d] of deltas) {
+    const it = items[id];
+    if (it?.type === 'frame') for (const cid of frameChildren(it, items)) if (!all.has(cid)) all.set(cid, d);
+  }
+  const ops: Op[] = [];
+  for (const [id, { dx, dy }] of all) {
+    const set: MoveSet = items[id]?.type === 'connector' ? { items: new Set(), conns: new Set([id]) } : { items: new Set([id]), conns: new Set() };
+    ops.push(...moveOps(set, items, dx, dy));
+  }
+  return ops;
+}
+
+export function alignSelection(mode: AlignMode) {
+  const { selection, items } = getState();
+  const ops = deltaOps(alignDeltas(items, selection, mode), items);
+  if (ops.length) board.apply(ops);
+}
+
+export function distributeSelection(axis: 'x' | 'y') {
+  const { selection, items } = getState();
+  const ops = deltaOps(distributeDeltas(items, selection, axis), items);
+  if (ops.length) board.apply(ops);
+  else if (selection.length < 3) showToast('Для распределения нужно выделить хотя бы 3 объекта');
+}
+
+// ------------------------------------------------------------------ шаблоны, ссылки, навигация
+
+/** Вставка шаблона в центр экрана — один шаг истории. */
+export function insertTemplate(templateId: string) {
+  const items = buildTemplate(templateId, () => uid());
+  if (!items.length) return;
+  const temp: ItemMap = Object.fromEntries(items.map((i) => [i.id, i]));
+  const b = boundsOf(Object.keys(temp), temp)!;
+  const c = viewportCenterWorld();
+  const copies = cloneItems(items, Math.round(c.x - (b.x + b.w / 2)), Math.round(c.y - (b.y + b.h / 2)));
+  board.begin();
+  addItems(copies);
+  board.commit();
+  const placed: ItemMap = Object.fromEntries(copies.map((i) => [i.id, i]));
+  board.fitRect(boundsOf(Object.keys(placed), placed), 1);
+}
+
+export const LINKABLE = new Set(['sticky', 'shape', 'text', 'image', 'frame']);
+
+/** Установить или убрать ссылку. Возвращает false, если адрес некорректен. */
+export function setLink(id: string, raw: string | null): boolean {
+  const it = getState().items[id];
+  if (!it || it.locked || !LINKABLE.has(it.type)) return false;
+  let link: string | null = null;
+  if (raw && raw.trim()) {
+    const v = raw.trim();
+    // явная чужая схема (javascript:, data:, mailto: …) — отказ, а не «https://javascript:…»
+    if (/^[a-z][a-z0-9+.-]*:(?!\d)/i.test(v) && !/^https?:\/\//i.test(v)) return false;
+    link = /^https?:\/\//i.test(v) ? v : `https://${v}`;
+    if (!isLink(link)) return false;
+    try {
+      if (!new URL(link).hostname) return false;
+    } catch {
+      return false;
+    }
+  }
+  board.apply([{ t: 'update', id, patch: { link } }]);
+  return true;
+}
+
+export function openLink(url: string) {
+  if (!isLink(url)) return;
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+/** Показать объект: если он мелкий или вне экрана — приблизить. */
+export function focusItem(id: string, select = true) {
+  const { items, camera, viewport } = getState();
+  const it = items[id];
+  if (!it) return;
+  const r = itemBounds(it, items);
+  const fits = r.w * camera.zoom < viewport.w * 0.8 && r.h * camera.zoom < viewport.h * 0.8;
+  if (camera.zoom >= 0.5 && fits) board.centerOn(rectCenter(r));
+  else board.fitRect(r, 1);
+  if (select) setSelection([id]);
+}
+
+// ------------------------------------------------------------------ комментарии
+
+/** Позиция пина: привязанный тред следует за объектом. */
+export function threadPosition(t: CommentThread, items: ItemMap): Pt {
+  const it = t.itemId ? items[t.itemId] : undefined;
+  return it ? { x: it.x + t.dx, y: it.y + t.dy } : { x: t.x, y: t.y };
+}
+
+export function startComment(at: Pt, itemId: string | null) {
+  if (getState().editingId) stopEditing();
+  setState({ commentDraft: { x: Math.round(at.x), y: Math.round(at.y), itemId }, openThreadId: null, contextMenu: null });
+}
+
+export function openThread(id: string, center = false) {
+  const st = getState();
+  const t = st.comments[id];
+  if (!t) return;
+  if (center) board.centerOn(threadPosition(t, st.items));
+  setState({ openThreadId: id, commentDraft: null, showResolved: st.showResolved || t.resolved });
+  board.markSeen(id);
+}
+
+// ------------------------------------------------------------------ презентация
+
+export function startPresentation(index = 0) {
+  const order = frameOrder(getState().items);
+  if (!order.length) {
+    showToast('На доске нет фреймов — добавьте фреймы (F), чтобы показывать их по порядку');
+    return;
+  }
+  if (getState().editingId) stopEditing();
+  setState({ presenting: { index: Math.min(Math.max(0, index), order.length - 1) }, selection: [], panel: null, contextMenu: null });
+  void document.documentElement.requestFullscreen?.().catch(() => undefined);
+  showPresentedFrame();
+}
+
+export function showPresentedFrame() {
+  const { presenting, items } = getState();
+  if (!presenting) return;
+  const order = frameOrder(items);
+  const f = items[order[presenting.index]];
+  if (f) board.fitRect({ x: f.x, y: f.y, w: f.w, h: f.h }, 4, 32);
+}
+
+export function presentationGo(to: number) {
+  const { presenting, items } = getState();
+  if (!presenting) return;
+  const n = frameOrder(items).length;
+  const index = Math.min(Math.max(0, to), n - 1);
+  if (index === presenting.index) return;
+  setState({ presenting: { index } });
+  showPresentedFrame();
+}
+
+export function stopPresentation() {
+  if (!getState().presenting) return;
+  setState({ presenting: null });
+  if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined);
+}
+
+// ------------------------------------------------------------------ голосование
+
+export const VOTABLE_TYPES = new Set(['sticky', 'shape', 'text', 'image']);
 
 // ------------------------------------------------------------------ слои, блокировка, группы
 
@@ -471,9 +670,11 @@ export function quickCreate(srcId: string, side: Side) {
   let copy: Item;
   if (src.type === 'image') {
     copy = makeSticky(id, x, y, z, st.stickyColor);
+    copy.author = getUser().name;
   } else {
-    copy = { ...structuredClone(src), id, x, y, z, locked: false, groupId: null } as Item;
+    copy = { ...structuredClone(src), id, x, y, z, locked: false, groupId: null, link: null } as Item;
     if ('text' in copy) copy.text = '';
+    if (copy.type === 'sticky') copy.author = getUser().name;
   }
   const conn = makeConnector(
     uid(),

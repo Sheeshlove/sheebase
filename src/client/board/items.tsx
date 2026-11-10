@@ -7,6 +7,7 @@ import {
   shapeTextBox,
   smoothPath,
 } from '../../shared/geometry';
+import { ExternalLink } from 'lucide-react';
 import type {
   ConnectorItem,
   FrameItem,
@@ -21,7 +22,7 @@ import type {
 import { stopEditing, updateItems } from './actions';
 import { LIMITS } from '../../shared/validate';
 import { getState, showToast, useBoard } from './store';
-import { fitText, layoutText, LINE_HEIGHT, stickyText, TEXT_PAD } from './text';
+import { authorFooter, fitText, layoutText, LINE_HEIGHT, stickyText, TEXT_PAD } from './text';
 
 const boxStyle = (it: Item): CSSProperties => ({
   width: it.w,
@@ -133,11 +134,42 @@ const editText = (id: string, field: 'text' | 'label' | 'title') => (text: strin
 
 // ------------------------------------------------------------------ объекты
 
+/** Значок ссылки в правом верхнем углу объекта (постоянного экранного размера). */
+function LinkBadge({ item }: { item: Item }) {
+  const zoom = useBoard((s) => s.camera.zoom);
+  if (!item.link) return null;
+  return (
+    <a
+      className="link-badge"
+      data-link="1"
+      data-ui="1"
+      href={item.link}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`Открыть ссылку: ${item.link}`}
+      style={{ transform: `translate(${item.w}px, 0) scale(${1 / zoom}) translate(-50%, -50%)` }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+    >
+      <ExternalLink size={13} strokeWidth={2.4} />
+    </a>
+  );
+}
+
 function StickyView({ item, editing }: { item: StickyItem; editing: boolean }) {
-  const t = useMemo(() => stickyText(item.text, item.w, item.h), [item.text, item.w, item.h]);
-  const style: CSSProperties = { padding: t.pad, fontSize: t.size, lineHeight: LINE_HEIGHT };
+  const showAuthors = useBoard((s) => s.showAuthors);
+  const author = showAuthors && item.author ? item.author : null;
+  const footer = author ? authorFooter(item.h) : 0;
+  const t = useMemo(() => stickyText(item.text, item.w, item.h, footer), [item.text, item.w, item.h, footer]);
+  const style: CSSProperties = { padding: t.pad, paddingBottom: t.pad + footer, fontSize: t.size, lineHeight: LINE_HEIGHT };
   return (
     <div className="item sticky" data-id={item.id} style={{ ...boxStyle(item), background: item.color }}>
+      {author && (
+        <div className="sticky-author" style={{ left: t.pad, right: t.pad, bottom: t.pad * 0.6, fontSize: footer * 0.75 }}>
+          {author}
+        </div>
+      )}
+      <LinkBadge item={item} />
       {editing ? (
         <div className="text-center" style={style}>
           <TextEditor itemId={item.id} value={item.text} onChange={editText(item.id, 'text')} maxLength={LIMITS.text} className="center" style={{ minHeight: `${LINE_HEIGHT}em` }} />
@@ -171,6 +203,7 @@ function ShapeView({ item, editing }: { item: ShapeItem; editing: boolean }) {
   };
   return (
     <div className="item shape" data-id={item.id} style={boxStyle(item)}>
+      <LinkBadge item={item} />
       <svg className="shape-svg" width={item.w} height={item.h}>
         <path
           d={d}
@@ -211,6 +244,7 @@ function TextView({ item, editing }: { item: TextItem; editing: boolean }) {
   };
   return (
     <div className="item text" data-id={item.id} style={style}>
+      <LinkBadge item={item} />
       {editing ? (
         <TextEditor itemId={item.id} value={item.text} onChange={editText(item.id, 'text')} maxLength={LIMITS.text} placeholder="Введите текст" />
       ) : (
@@ -233,7 +267,9 @@ function FrameView({ item, editing }: { item: FrameItem; editing: boolean }) {
         data-id={item.id}
         data-frame-body="1"
         style={{ ...boxStyle(item), background: item.fill === 'transparent' ? 'rgba(255,255,255,0.4)' : item.fill }}
-      />
+      >
+        <LinkBadge item={item} />
+      </div>
       <div
         className="frame-title"
         data-id={item.id}
@@ -268,6 +304,7 @@ function ImageView({ item }: { item: ImageItem }) {
   return (
     <div className="item image" data-id={item.id} style={boxStyle(item)}>
       <img src={item.src} alt="" draggable={false} />
+      <LinkBadge item={item} />
     </div>
   );
 }

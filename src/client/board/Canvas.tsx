@@ -1,10 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import type { ItemMap } from '../../shared/types';
+import { board } from './controller';
 import { Interactions } from './interactions';
 import { DraftLayer, ItemView } from './items';
 import { Overlay } from './Overlay';
-import { setState, useBoard } from './store';
+import { setState, useBoard, votingActive } from './store';
 
 let lastItems: ItemMap | null = null;
 let lastOrder: string[] = [];
@@ -29,6 +30,7 @@ export function Canvas() {
   const tool = useBoard((s) => s.tool);
   const panning = useBoard((s) => s.panning);
   const spacePan = useBoard((s) => s.spacePan);
+  const voting = useBoard((s) => votingActive(s));
 
   useEffect(() => {
     const el = ref.current!;
@@ -38,12 +40,15 @@ export function Canvas() {
     ro.observe(el);
     setState({ viewport: { w: el.clientWidth, h: el.clientHeight } });
     const onWheel = (e: WheelEvent) => it.wheel(e);
+    // доска восстановлена из версии — незавершённый жест опирается на прежнее состояние, прерываем его
+    const offReset = board.onReset(() => it.cancel());
     el.addEventListener('wheel', onWheel, { passive: false });
     // жесты Safari
     const prevent = (e: Event) => e.preventDefault();
     el.addEventListener('gesturestart', prevent);
     return () => {
       ro.disconnect();
+      offReset();
       el.removeEventListener('wheel', onWheel);
       el.removeEventListener('gesturestart', prevent);
       interactions = null;
@@ -57,7 +62,7 @@ export function Canvas() {
   return (
     <div
       ref={ref}
-      className={`viewport ${cursorClass}`}
+      className={`viewport ${cursorClass} ${voting ? 'voting' : ''}`}
       style={
         showGrid
           ? {
@@ -76,7 +81,7 @@ export function Canvas() {
       onPointerCancel={(e) => interactions?.pointerCancel(e.nativeEvent)}
       onPointerLeave={() => interactions?.leave()}
       onDoubleClick={(e) => interactions?.doubleClick(e.nativeEvent)}
-      onContextMenu={(e) => e.preventDefault()}
+      onContextMenu={(e) => interactions?.contextMenu(e.nativeEvent)}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => interactions?.drop(e.nativeEvent)}
       data-testid="canvas"

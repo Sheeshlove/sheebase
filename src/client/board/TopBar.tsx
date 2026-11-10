@@ -1,10 +1,30 @@
-import { ChevronLeft, CircleQuestionMark, Download, FileBraces, FileImage, Image, Link, Upload, Wifi, WifiOff } from 'lucide-react';
+import {
+  ChevronLeft,
+  CircleQuestionMark,
+  Clock3,
+  Crosshair,
+  Download,
+  Eye,
+  FileBraces,
+  FileImage,
+  Image,
+  Link,
+  MessageSquare,
+  MonitorPlay,
+  Upload,
+  Users,
+  Wifi,
+  WifiOff,
+} from 'lucide-react';
 import { useRef, useState, useSyncExternalStore } from 'react';
 import { Popover } from '../ui/Popover';
 import { getUser, subscribeUser, updateUser, USER_COLORS } from '../user';
 import { board } from './controller';
 import { exportJson, exportPng, exportSvg, importJsonFile } from './exporter';
-import { setState, showToast, useBoard } from './store';
+import { startPresentation } from './actions';
+import { commentStats } from './Comments';
+import { TimerWidget, VotingMenu } from './Facilitation';
+import { getState, type Panel, setState, showToast, useBoard, writePref } from './store';
 
 function BoardName() {
   const meta = useBoard((s) => s.meta);
@@ -95,7 +115,10 @@ function Me() {
               />
             ))}
           </div>
-          <div className="hint">Изменения применятся при следующем подключении к доске</div>
+          <div className="hint">Коллеги сразу видят новое имя и цвет</div>
+          <button type="button" className="chip" onClick={() => board.summon()} data-testid="summon">
+            <Users size={14} /> Собрать всех ко мне
+          </button>
         </div>
       )}
     </Popover>
@@ -104,24 +127,115 @@ function Me() {
 
 function Peers() {
   const peers = useBoard((s) => s.peers);
+  const following = useBoard((s) => s.following);
   const list = Object.values(peers);
   return (
     <div className="avatars" data-testid="peers" data-count={list.length}>
       {list.slice(0, 6).map((p) => (
-        <button
-          type="button"
+        <Popover
           key={p.clientId}
-          className="avatar"
-          style={{ background: p.color }}
-          title={`${p.name}${p.cursor ? ' — перейти к курсору' : ''}`}
-          onClick={() => p.cursor && board.centerOn(p.cursor)}
+          placement="bottom"
+          className="align-right"
+          trigger={(_o, toggle) => (
+            <button
+              type="button"
+              className={`avatar ${following === p.clientId ? 'followed' : ''}`}
+              style={{ background: p.color, outlineColor: p.color }}
+              title={p.name}
+              onClick={toggle}
+              data-testid="peer-avatar"
+            >
+              {p.name.slice(0, 1).toUpperCase()}
+            </button>
+          )}
         >
-          {p.name.slice(0, 1).toUpperCase()}
-        </button>
+          {(close) => (
+            <div className="list">
+              <div className="list-title">{p.name}</div>
+              {following === p.clientId ? (
+                <button type="button" className="list-item" onClick={() => (close(), board.stopFollowing())}>
+                  <Eye size={16} /> Перестать следовать
+                </button>
+              ) : (
+                <button type="button" className="list-item" onClick={() => (close(), board.follow(p.clientId))} data-testid="follow">
+                  <Eye size={16} /> Следовать за видом
+                </button>
+              )}
+              <button type="button" className="list-item" disabled={!p.cursor} onClick={() => (close(), p.cursor && board.centerOn(p.cursor))}>
+                <Crosshair size={16} /> Перейти к курсору
+              </button>
+            </div>
+          )}
+        </Popover>
       ))}
       {list.length > 6 && <div className="avatar more">+{list.length - 6}</div>}
       <Me />
     </div>
+  );
+}
+
+function PanelButton({ panel, title, icon, badge, dot, testId }: { panel: Panel; title: string; icon: React.ReactNode; badge?: number; dot?: boolean; testId?: string }) {
+  const active = useBoard((s) => s.panel === panel);
+  return (
+    <button
+      type="button"
+      className={`icon-btn with-badge ${active ? 'active' : ''}`}
+      title={title}
+      aria-label={title}
+      onClick={() => setState({ panel: getState().panel === panel ? null : panel })}
+      data-testid={testId}
+    >
+      {icon}
+      {!!badge && <span className="count-badge">{badge}</span>}
+      {dot && <span className="dot-unread" />}
+    </button>
+  );
+}
+
+function CommentsButton() {
+  // пересчитывается при изменении комментариев и отметок о прочтении
+  useBoard((s) => s.comments);
+  useBoard((s) => s.seen);
+  const { open, unread } = commentStats();
+  return <PanelButton panel="comments" title="Комментарии" icon={<MessageSquare size={18} />} badge={open} dot={unread} testId="comments-button" />;
+}
+
+function ViewMenu() {
+  const showAuthors = useBoard((s) => s.showAuthors);
+  const showResolved = useBoard((s) => s.showResolved);
+  const showMinimap = useBoard((s) => s.showMinimap);
+  const toggle = (label: string, value: boolean, onChange: (v: boolean) => void, testId?: string) => (
+    <label className="check-row" data-testid={testId}>
+      <input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} /> {label}
+    </label>
+  );
+  return (
+    <Popover
+      placement="bottom"
+      className="align-right"
+      trigger={(_o, open) => (
+        <button type="button" className="icon-btn" title="Вид" onClick={open} data-testid="view-menu">
+          <Eye size={18} />
+        </button>
+      )}
+    >
+      {() => (
+        <div className="menu-panel">
+          <div className="list-title">Вид</div>
+          {toggle(
+            'Показывать авторов стикеров',
+            showAuthors,
+            (v) => {
+              setState({ showAuthors: v });
+              writePref('showAuthors', v);
+            },
+            'toggle-authors',
+          )}
+          {toggle('Показывать решённые комментарии', showResolved, (v) => setState({ showResolved: v }))}
+          {toggle('Мини-карта', showMinimap, (v) => setState({ showMinimap: v }))}
+        </div>
+      )}
+    </Popover>
   );
 }
 
@@ -150,6 +264,14 @@ export function TopBar() {
       <div className="topbar-right panel" data-ui>
         <Peers />
         <div className="sep-v" />
+        <TimerWidget />
+        <VotingMenu />
+        <CommentsButton />
+        <PanelButton panel="versions" title="История версий" icon={<Clock3 size={18} />} testId="versions-button" />
+        <button type="button" className="icon-btn hide-narrow" title="Презентация фреймов" onClick={() => startPresentation(0)} data-testid="present-button">
+          <MonitorPlay size={18} />
+        </button>
+        <ViewMenu />
         <Popover
           placement="bottom"
           className="align-right"
