@@ -14,8 +14,9 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': `http://localhost:${API_PORT}`,
-      '/ws': { target: `ws://localhost:${API_PORT}`, ws: true },
+      // со слешем: иначе под прокси попадает модуль /api.ts
+      '/api/': `http://localhost:${API_PORT}`,
+      '^/ws$': { target: `ws://localhost:${API_PORT}`, ws: true },
     },
   },
 });

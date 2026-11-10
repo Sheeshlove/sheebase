@@ -145,6 +145,8 @@ Miro организован вокруг нескольких ключевых �
 | FR-SEL-10 | M | Редактирование текста: двойной клик или Enter по выделенному объекту; Esc или клик вне — завершить; вставка в редактор — только простой текст |
 | FR-SEL-11 | M | Контекстная панель над выделением: набор свойств зависит от типа объектов (цвет, фигура, обводка, шрифт, стиль линии, стрелки), общие действия — слои, блокировка, дублирование, удаление |
 | FR-SEL-12 | S | Быстрое создание: у выделенного стикера/фигуры/текста/изображения по сторонам отображаются кнопки «+». Клик — создать такой же объект в этом направлении и соединить коннектором; перетаскивание — провести коннектор к любому объекту или в пустое место |
+| FR-SEL-13 | C | Двойной клик по пустому месту холста (или фрейма) создаёт стикер и открывает ввод текста |
+| FR-SEL-14 | S | Esc во время перетаскивания, изменения размера или рисования коннектора отменяет действие и возвращает объекты на место |
 
 ### 5.5 История действий (FR-HIST)
 
@@ -356,3 +358,24 @@ npm start            # http://localhost:3000
 ```bash
 npm run dev
 ```
+
+---
+
+## 11. Статус реализации и трассировка
+
+Все требования с приоритетами M, S и C из разделов 5–6 реализованы в прототипе. Где реализовано и чем проверено:
+
+| Группа требований | Реализация | Проверка |
+|---|---|---|
+| FR-DASH | `src/client/pages/Dashboard.tsx`, `src/server/app.ts` (REST), `src/shared/templates.ts` | `tests/server.test.ts` (REST), e2e |
+| FR-CNV | `src/client/board/Canvas.tsx`, `interactions.ts` (wheel, pan, pinch), `controller.ts` (камера), `NavControls.tsx` (зум, мини-карта) | e2e, ручная проверка |
+| FR-OBJ | `src/client/board/items.tsx` (отрисовка), `text.ts` (раскладка и автоподбор шрифта), `src/shared/geometry.ts` (фигуры, коннекторы), `actions.ts` (создание) | `tests/geometry.test.ts`, e2e |
+| FR-SEL | `interactions.ts` (выделение, перемещение, ресайз, направляющие, коннекторы, перо, ластик), `Overlay.tsx`, `ContextToolbar.tsx`, `actions.ts`, `BoardPage.tsx` (клавиши, буфер обмена) | `tests/client.test.ts` (клонирование, направляющие), e2e |
+| FR-HIST | `controller.ts`: транзакции `begin/commit/rollback`, стеки undo/redo (300 шагов) | `tests/client.test.ts`, e2e |
+| FR-COL | `src/client/board/syncEngine.ts`, `controller.ts` (WebSocket, переподключение), `src/server/rooms.ts` | `tests/sync.test.ts` (сходимость, 300 случайных сценариев), `tests/server.test.ts`, e2e (2 участника) |
+| FR-STO | `src/server/repository.ts` (debounce 300 мс, атомарная запись, flush при SIGINT/SIGTERM) | `tests/server.test.ts` (перезапуск), e2e (перезапуск сервера) |
+| FR-EXP | `src/client/board/exporter.ts` | e2e (PNG) |
+| NFR-04 | `src/shared/validate.ts`, `maxPayload` в `src/server/app.ts` | `tests/validate.test.ts`, `tests/server.test.ts` |
+| NFR-01/02 | Подписка каждого объекта только на свои данные (zustand-селекторы), пакетирование операций 30 мс, троттлинг курсора 40 мс | Замер: перетаскивание 500 объектов одновременно ≈ 28 мс на шаг в headless Chromium без GPU |
+
+Критерии приёмки AC-01…AC-12 проверяются автоматически (`npm test`, `npm run e2e`), кроме AC-10, который покрыт юнит-тестом «изменения разных полей одного объекта не теряются» в `tests/sync.test.ts`.
