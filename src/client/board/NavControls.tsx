@@ -1,43 +1,77 @@
 import { Map as MapIcon, Maximize, Minus, Plus } from 'lucide-react';
-import { useRef } from 'react';
-import { boundsOf, itemBounds, rectUnion } from '../../shared/geometry';
+import { useMemo, useRef } from 'react';
+import { boundsOf, itemBounds, type Rect, rectUnion } from '../../shared/geometry';
+import type { Item } from '../../shared/types';
 import { board } from './controller';
 import { getState, screenToWorld, setState, useBoard } from './store';
 
 const MM_W = 200;
 const MM_H = 130;
 
+type MapFrame = { W: Rect; k: number; ox: number; oy: number };
+
+function fillOf(it: Item): string {
+  switch (it.type) {
+    case 'sticky':
+      return it.color;
+    case 'shape':
+      return it.fill === 'transparent' || it.fill === '#ffffff' ? '#ced4da' : it.fill;
+    case 'frame':
+      return '#e9ecef';
+    case 'image':
+      return '#adb5bd';
+    default:
+      return '#868e96';
+  }
+}
+
 function Minimap() {
   const items = useBoard((s) => s.items);
   const cam = useBoard((s) => s.camera);
   const vp = useBoard((s) => s.viewport);
-  const dragging = useRef(false);
+  /** Отображение мир → мини-карта, зафиксированное на время перетаскивания (иначе вид «убегает»). */
+  const frozen = useRef<MapFrame | null>(null);
+
+  // Содержимое зависит только от объектов — не пересчитывается при панорамировании
+  const content = useMemo(() => {
+    const ids = Object.keys(items);
+    const rects = Object.values(items)
+      .filter((it) => it.type !== 'connector')
+      .map((it) => {
+        const b = itemBounds(it, items);
+        return (
+          <rect
+            key={it.id}
+            x={b.x}
+            y={b.y}
+            width={Math.max(1, b.w)}
+            height={Math.max(1, b.h)}
+            fill={fillOf(it)}
+            stroke={it.type === 'frame' ? '#adb5bd' : 'none'}
+            strokeWidth={0.5}
+            vectorEffect="non-scaling-stroke"
+          />
+        );
+      });
+    return { bounds: boundsOf(ids, items), rects };
+  }, [items]);
 
   const tl = screenToWorld(cam, { x: 0, y: 0 });
   const view = { x: tl.x, y: tl.y, w: vp.w / cam.zoom, h: vp.h / cam.zoom };
-  const content = boundsOf(Object.keys(items), items);
-  const world = rectUnion(content ? [content, view] : [view])!;
-  const pad = Math.max(world.w, world.h) * 0.05;
-  const W = { x: world.x - pad, y: world.y - pad, w: world.w + pad * 2, h: world.h + pad * 2 };
-  const k = Math.min(MM_W / W.w, MM_H / W.h);
-  const ox = (MM_W - W.w * k) / 2;
-  const oy = (MM_H - W.h * k) / 2;
-  const tx = (x: number) => ox + (x - W.x) * k;
-  const ty = (y: number) => oy + (y - W.y) * k;
-
-  const moveTo = (e: React.PointerEvent) => {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const wx = (e.clientX - r.left - ox) / k + W.x;
-    const wy = (e.clientY - r.top - oy) / k + W.y;
-    board.centerOn({ x: wx, y: wy });
+  const live = (): MapFrame => {
+    const world = rectUnion(content.bounds ? [content.bounds, view] : [view])!;
+    const pad = Math.max(world.w, world.h) * 0.05;
+    const W = { x: world.x - pad, y: world.y - pad, w: world.w + pad * 2, h: world.h + pad * 2 };
+    const k = Math.min(MM_W / W.w, MM_H / W.h);
+    return { W, k, ox: (MM_W - W.w * k) / 2, oy: (MM_H - W.h * k) / 2 };
   };
+  const f = frozen.current ?? live();
+  const tx = (x: number) => f.ox + (x - f.W.x) * f.k;
+  const ty = (y: number) => f.oy + (y - f.W.y) * f.k;
 
-  const fillOf = (t: string, it: (typeof items)[string]) => {
-    if (it.type === 'sticky') return it.color;
-    if (it.type === 'shape') return it.fill === 'transparent' || it.fill === '#ffffff' ? '#ced4da' : it.fill;
-    if (it.type === 'frame') return '#e9ecef';
-    if (t === 'image') return '#adb5bd';
-    return '#868e96';
+  const moveTo = (e: React.PointerEvent, frame: MapFrame) => {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    board.centerOn({ x: (e.clientX - r.left - frame.ox) / frame.k + frame.W.x, y: (e.clientY - r.top - frame.oy) / frame.k + frame.W.y });
   };
 
   return (
@@ -45,32 +79,18 @@ function Minimap() {
       className="minimap panel"
       data-ui
       onPointerDown={(e) => {
-        dragging.current = true;
+        frozen.current = f;
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-        moveTo(e);
+        moveTo(e, f);
       }}
-      onPointerMove={(e) => dragging.current && moveTo(e)}
-      onPointerUp={() => (dragging.current = false)}
+      onPointerMove={(e) => frozen.current && moveTo(e, frozen.current)}
+      onPointerUp={() => (frozen.current = null)}
+      onPointerCancel={() => (frozen.current = null)}
       title="Мини-карта: кликните или перетащите, чтобы перейти"
     >
       <svg width={MM_W} height={MM_H}>
-        {Object.values(items).map((it) => {
-          if (it.type === 'connector') return null;
-          const b = itemBounds(it, items);
-          return (
-            <rect
-              key={it.id}
-              x={tx(b.x)}
-              y={ty(b.y)}
-              width={Math.max(1, b.w * k)}
-              height={Math.max(1, b.h * k)}
-              fill={fillOf(it.type, it)}
-              stroke={it.type === 'frame' ? '#adb5bd' : 'none'}
-              strokeWidth={0.5}
-            />
-          );
-        })}
-        <rect x={tx(view.x)} y={ty(view.y)} width={view.w * k} height={view.h * k} className="minimap-view" />
+        <g transform={`translate(${f.ox - f.W.x * f.k} ${f.oy - f.W.y * f.k}) scale(${f.k})`}>{content.rects}</g>
+        <rect x={tx(view.x)} y={ty(view.y)} width={view.w * f.k} height={view.h * f.k} className="minimap-view" />
       </svg>
     </div>
   );

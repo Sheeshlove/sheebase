@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeConnector, makeSticky } from '../src/shared/defaults';
 import { buildTemplate, TEMPLATES } from '../src/shared/templates';
-import { sanitizeItem, sanitizeName, sanitizeOps, sanitizePatch } from '../src/shared/validate';
+import { sanitizeItem, sanitizeName, sanitizeOps, sanitizeOpsReport, sanitizePatch } from '../src/shared/validate';
 import { uid } from '../src/shared/ops';
 
 describe('валидация', () => {
@@ -54,5 +54,20 @@ describe('валидация', () => {
       for (const it of items) expect(sanitizeItem(it), `${t.id}: ${it.type}`).toEqual(it);
       if (t.id !== 'blank') expect(items.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('отчёт о валидации (коррекция отправителя)', () => {
+  it('помечает объекты, чьи операции отброшены или урезаны', () => {
+    const r = sanitizeOpsReport([
+      { t: 'update', id: 'ok', patch: { x: 1 } },
+      { t: 'update', id: 'cut', patch: { x: 1, label: 'л'.repeat(600) } },
+      { t: 'update', id: 'drop', patch: { label: 'л'.repeat(600) } },
+      { t: 'add', item: { ...makeSticky('extra', 0, 0, 1, '#fff'), unknownField: 1 } },
+      { t: 'add', item: { id: 'bad', type: 'sticky' } },
+      { t: 'delete', id: 'gone' },
+    ]);
+    expect(r.rejected).toEqual(['cut', 'drop', 'extra', 'bad']);
+    expect(r.ops.map((o) => (o.t === 'add' ? o.item.id : o.id))).toEqual(['ok', 'cut', 'extra', 'gone']);
   });
 });

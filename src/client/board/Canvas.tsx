@@ -73,7 +73,7 @@ export function Canvas() {
       }}
       onPointerMove={(e) => interactions?.pointerMove(e.nativeEvent)}
       onPointerUp={(e) => interactions?.pointerUp(e.nativeEvent)}
-      onPointerCancel={(e) => interactions?.pointerUp(e.nativeEvent)}
+      onPointerCancel={(e) => interactions?.pointerCancel(e.nativeEvent)}
       onPointerLeave={() => interactions?.leave()}
       onDoubleClick={(e) => interactions?.doubleClick(e.nativeEvent)}
       onContextMenu={(e) => e.preventDefault()}

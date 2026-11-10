@@ -39,6 +39,7 @@ async function startServer() {
   });
   server.stderr.on('data', (d) => process.stderr.write(`[server] ${d}`));
   for (let i = 0; i < 100; i++) {
+    if (server.exitCode !== null) throw new Error(`сервер завершился с кодом ${server.exitCode}`);
     try {
       const r = await fetch(`${BASE}/api/health`);
       if (r.ok) return;
@@ -53,6 +54,8 @@ async function stopServer() {
   if (!server) return;
   const s = server;
   server = null;
+  // процесс мог уже завершиться сам (например, порт занят) — тогда события exit больше не будет
+  if (s.exitCode !== null || s.signalCode !== null) return;
   const done = new Promise((r) => s.once('exit', r));
   s.kill('SIGTERM');
   await done;

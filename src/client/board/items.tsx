@@ -19,7 +19,8 @@ import type {
   TextItem,
 } from '../../shared/types';
 import { stopEditing, updateItems } from './actions';
-import { getState, useBoard } from './store';
+import { LIMITS } from '../../shared/validate';
+import { getState, showToast, useBoard } from './store';
 import { fitText, layoutText, LINE_HEIGHT, stickyText, TEXT_PAD } from './text';
 
 const boxStyle = (it: Item): CSSProperties => ({
@@ -49,13 +50,15 @@ interface EditorProps {
   className?: string;
   style?: CSSProperties;
   placeholder?: string;
+  /** Предел длины (совпадает с серверной валидацией — иначе сервер молча отбросит поле). */
+  maxLength: number;
 }
 
 /**
  * Встроенный редактор (contentEditable). Неконтролируемый: React не трогает
  * содержимое после монтирования, чтобы не сбивать каретку.
  */
-function TextEditor({ itemId, value, onChange, className, style, placeholder }: EditorProps) {
+function TextEditor({ itemId, value, onChange, className, style, placeholder, maxLength }: EditorProps) {
   const ref = useRef<HTMLDivElement>(null);
   const initial = useRef(value);
 
@@ -87,7 +90,21 @@ function TextEditor({ itemId, value, onChange, className, style, placeholder }: 
       suppressContentEditableWarning
       spellCheck={false}
       data-placeholder={placeholder}
-      onInput={() => onChange(read())}
+      onInput={() => {
+        let text = read();
+        if (text.length > maxLength) {
+          text = text.slice(0, maxLength);
+          const el = ref.current!;
+          el.innerText = text;
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          range.collapse(false);
+          window.getSelection()?.removeAllRanges();
+          window.getSelection()?.addRange(range);
+          showToast(`Достигнут предел длины: ${maxLength} символов`);
+        }
+        onChange(text);
+      }}
       onPaste={(e) => {
         e.preventDefault();
         const text = e.clipboardData.getData('text/plain');
@@ -111,7 +128,8 @@ function TextEditor({ itemId, value, onChange, className, style, placeholder }: 
   );
 }
 
-const editText = (id: string, field: 'text' | 'label' | 'title') => (text: string) => updateItems([{ id, patch: { [field]: text } }]);
+const editText = (id: string, field: 'text' | 'label' | 'title') => (text: string) =>
+  updateItems([{ id, patch: { [field]: text.slice(0, field === 'text' ? LIMITS.text : LIMITS.shortText) } }]);
 
 // ------------------------------------------------------------------ объекты
 
@@ -122,7 +140,7 @@ function StickyView({ item, editing }: { item: StickyItem; editing: boolean }) {
     <div className="item sticky" data-id={item.id} style={{ ...boxStyle(item), background: item.color }}>
       {editing ? (
         <div className="text-center" style={style}>
-          <TextEditor itemId={item.id} value={item.text} onChange={editText(item.id, 'text')} className="center" style={{ minHeight: `${LINE_HEIGHT}em` }} />
+          <TextEditor itemId={item.id} value={item.text} onChange={editText(item.id, 'text')} maxLength={LIMITS.text} className="center" style={{ minHeight: `${LINE_HEIGHT}em` }} />
         </div>
       ) : (
         <div className="text-center" style={style}>
@@ -164,7 +182,7 @@ function ShapeView({ item, editing }: { item: ShapeItem; editing: boolean }) {
       </svg>
       <div className="text-center abs" style={textStyle}>
         {editing ? (
-          <TextEditor itemId={item.id} value={item.text} onChange={editText(item.id, 'text')} className="center" style={{ minHeight: `${LINE_HEIGHT}em` }} />
+          <TextEditor itemId={item.id} value={item.text} onChange={editText(item.id, 'text')} maxLength={LIMITS.text} className="center" style={{ minHeight: `${LINE_HEIGHT}em` }} />
         ) : (
           <div>
             <Lines lines={t.lines} />
@@ -194,7 +212,7 @@ function TextView({ item, editing }: { item: TextItem; editing: boolean }) {
   return (
     <div className="item text" data-id={item.id} style={style}>
       {editing ? (
-        <TextEditor itemId={item.id} value={item.text} onChange={editText(item.id, 'text')} placeholder="Введите текст" />
+        <TextEditor itemId={item.id} value={item.text} onChange={editText(item.id, 'text')} maxLength={LIMITS.text} placeholder="Введите текст" />
       ) : (
         <Lines lines={lines} />
       )}
@@ -230,7 +248,7 @@ function FrameView({ item, editing }: { item: FrameItem; editing: boolean }) {
             data-editor="1"
             className="frame-title-input"
             defaultValue={item.title}
-            maxLength={200}
+            maxLength={LIMITS.shortText}
             onChange={(e) => updateItems([{ id: item.id, patch: { title: e.target.value } }])}
             onKeyDown={(e) => {
               e.stopPropagation();
@@ -295,7 +313,7 @@ function ConnectorView({ item, editing }: { item: ConnectorItem; editing: boolea
       </svg>
       {(item.label || editing) && (
         <div className="connector-label" style={{ left: g.mid.x - bx, top: g.mid.y - by }}>
-          {editing ? <TextEditor itemId={item.id} value={item.label} onChange={editText(item.id, 'label')} placeholder="Подпись" /> : item.label}
+          {editing ? <TextEditor itemId={item.id} value={item.label} onChange={editText(item.id, 'label')} maxLength={LIMITS.shortText} placeholder="Подпись" /> : item.label}
         </div>
       )}
     </div>

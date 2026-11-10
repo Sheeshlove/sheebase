@@ -9,6 +9,7 @@ import {
 } from '../../shared/defaults';
 import {
   boundsOf,
+  frameChildren,
   type Pt,
   rectCenter,
   rectsIntersect,
@@ -184,10 +185,35 @@ export function stopEditing() {
   const it = st.items[id];
   setState({ editingId: null });
   if (it && it.type === 'text' && it.text.trim() === '') {
-    board.apply([{ t: 'delete', id }]);
+    // пустой текстовый блок удаляется вместе с привязанными к нему коннекторами
+    const gone = [id, ...attachedConnectors(new Set([id]), st.items)];
+    board.apply(gone.map((gid) => ({ t: 'delete', id: gid })));
     setState({ selection: [] });
   }
   board.commit();
+}
+
+/**
+ * Создать объект и сразу открыть ввод текста — одним шагом истории:
+ * Ctrl+Z удаляет объект целиком, а брошенный пустой текст не оставляет «фантома».
+ */
+export function createAndEdit(create: () => string): string {
+  board.begin();
+  const id = create();
+  startEditing(id);
+  board.commit();
+  return id;
+}
+
+/** Отмена/повтор из интерфейса: сначала завершаем ввод текста, иначе транзакция редактирования блокирует историю. */
+export function undo() {
+  if (getState().editingId) stopEditing();
+  board.undo();
+}
+
+export function redo() {
+  if (getState().editingId) stopEditing();
+  board.redo();
 }
 
 // ------------------------------------------------------------------ удаление, дублирование, буфер
@@ -218,14 +244,10 @@ export function deleteSelection() {
 /** Объекты для копирования: выделение + содержимое выделенных фреймов. */
 function collectForCopy(): Item[] {
   const st = getState();
-  const ids = new Set(st.selection);
+  const ids = new Set(st.selection.filter((id) => st.items[id]));
   for (const id of st.selection) {
     const f = st.items[id];
-    if (f?.type !== 'frame') continue;
-    for (const oid in st.items) {
-      const o = st.items[oid];
-      if (o.type !== 'frame' && o.type !== 'connector' && rectsContained(f, o)) ids.add(oid);
-    }
+    if (f?.type === 'frame') for (const cid of frameChildren(f, st.items)) ids.add(cid);
   }
   // коннекторы между копируемыми объектами
   for (const cid in st.items) {
@@ -242,12 +264,6 @@ function collectForCopy(): Item[] {
     if (!c.to.itemId || !ids.has(c.to.itemId)) c.to = { x: b.pt.x, y: b.pt.y, itemId: null, side: null };
     return c;
   });
-}
-
-function rectsContained(outer: Item, inner: Item) {
-  return (
-    inner.x >= outer.x && inner.y >= outer.y && inner.x + inner.w <= outer.x + outer.w && inner.y + inner.h <= outer.y + outer.h
-  );
 }
 
 /** Клонирует объекты с новыми id, сдвигом и переподключением коннекторов. */
@@ -366,21 +382,58 @@ export function selectAll() {
   setSelection(Object.keys(getState().items));
 }
 
+/** Что сдвигается вместе с выделением. */
+export interface MoveSet {
+  /** Объекты (кроме коннекторов), которые смещаются целиком. */
+  items: Set<string>;
+  /** Коннекторы, у которых смещаются свободные концы (привязанные следуют за объектами сами). */
+  conns: Set<string>;
+}
+
+/**
+ * Единое правило для перетаскивания и стрелок: незаблокированные выделенные объекты
+ * и всё содержимое выделенных фреймов (фрейм переносит своё содержимое целиком).
+ */
+export function computeMoveSet(selection: readonly string[], items: ItemMap): MoveSet {
+  const set: MoveSet = { items: new Set(), conns: new Set() };
+  const add = (id: string) => {
+    const it = items[id];
+    if (!it) return;
+    if (it.type === 'connector') set.conns.add(id);
+    else set.items.add(id);
+  };
+  for (const id of selection) {
+    const it = items[id];
+    if (!it || it.locked) continue;
+    add(id);
+    if (it.type === 'frame') for (const cid of frameChildren(it, items)) add(cid);
+  }
+  return set;
+}
+
+const r2 = (v: number) => Math.round(v * 100) / 100;
+
+/** Операции сдвига набора на (dx, dy) от исходного состояния `base`. */
+export function moveOps(set: MoveSet, base: ItemMap, dx: number, dy: number): Op[] {
+  const ops: Op[] = [];
+  for (const id of set.items) {
+    const it = base[id];
+    if (it) ops.push({ t: 'update', id, patch: { x: r2(it.x + dx), y: r2(it.y + dy) } });
+  }
+  for (const id of set.conns) {
+    const c = base[id];
+    if (!c || c.type !== 'connector') continue;
+    const patch: ItemPatch = {};
+    if (!c.from.itemId || !base[c.from.itemId]) patch.from = { ...c.from, x: r2(c.from.x + dx), y: r2(c.from.y + dy) };
+    if (!c.to.itemId || !base[c.to.itemId]) patch.to = { ...c.to, x: r2(c.to.x + dx), y: r2(c.to.y + dy) };
+    if (patch.from || patch.to) ops.push({ t: 'update', id, patch });
+  }
+  return ops;
+}
+
 export function nudgeSelection(dx: number, dy: number) {
   const st = getState();
-  const ops: Op[] = [];
-  for (const it of selectedItems()) {
-    if (it.locked) continue;
-    if (it.type === 'connector') {
-      const patch: ItemPatch = {};
-      if (!it.from.itemId || !st.items[it.from.itemId]) patch.from = { ...it.from, x: it.from.x + dx, y: it.from.y + dy };
-      if (!it.to.itemId || !st.items[it.to.itemId]) patch.to = { ...it.to, x: it.to.x + dx, y: it.to.y + dy };
-      if (Object.keys(patch).length) ops.push({ t: 'update', id: it.id, patch });
-    } else {
-      ops.push({ t: 'update', id: it.id, patch: { x: it.x + dx, y: it.y + dy } });
-    }
-  }
-  board.apply(ops);
+  board.apply(moveOps(computeMoveSet(st.selection, st.items), st.items, dx, dy));
 }
 
 export function zoomToSelection() {
@@ -434,8 +487,8 @@ export function quickCreate(srcId: string, side: Side) {
     { t: 'add', item: conn },
   ]);
   setSelection([id]);
-  board.commit();
   if (copy.type !== 'image') startEditing(id);
+  board.commit();
 }
 
 // ------------------------------------------------------------------ изображения

@@ -360,6 +360,20 @@ export function itemBounds(item: Item, items: ItemMap): Rect {
   return { x: item.x, y: item.y, w: item.w, h: item.h };
 }
 
+/**
+ * Содержимое фрейма: все объекты (кроме самого фрейма), рамка которых целиком
+ * лежит внутри него, — включая вложенные фреймы, их содержимое и коннекторы.
+ * Единое правило для перемещения, копирования и экспорта.
+ */
+export function frameChildren(frame: Item, items: ItemMap): string[] {
+  const out: string[] = [];
+  for (const id in items) {
+    if (id === frame.id) continue;
+    if (rectContains(frame, itemBounds(items[id], items))) out.push(id);
+  }
+  return out;
+}
+
 export function boundsOf(ids: readonly string[], items: ItemMap): Rect | null {
   const rects: Rect[] = [];
   for (const id of ids) {

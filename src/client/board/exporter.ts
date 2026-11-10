@@ -2,9 +2,8 @@ import {
   arrowHeadPath,
   boundsOf,
   connectorGeometry,
+  frameChildren,
   geometryPath,
-  itemBounds,
-  rectContains,
   shapePath,
   shapeTextBox,
   smoothPath,
@@ -116,7 +115,7 @@ function exportSet(): Item[] {
   const ids = new Set(selection);
   for (const id of selection) {
     const f = items[id];
-    if (f?.type === 'frame') for (const oid in items) if (oid !== id && rectContains(f, itemBounds(items[oid], items))) ids.add(oid);
+    if (f?.type === 'frame') for (const cid of frameChildren(f, items)) ids.add(cid);
   }
   return [...ids].map((id) => items[id]).filter((x): x is Item => !!x);
 }

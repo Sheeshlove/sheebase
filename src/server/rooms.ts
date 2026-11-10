@@ -1,7 +1,7 @@
 import type { WebSocket, WebSocketServer } from 'ws';
 import { uid } from '../shared/ops';
-import type { BoardMeta, ClientMessage, Peer, ServerMessage } from '../shared/types';
-import { sanitizeName, sanitizeOps } from '../shared/validate';
+import type { BoardMeta, ClientMessage, Op, Peer, ServerMessage } from '../shared/types';
+import { sanitizeName, sanitizeOpsReport } from '../shared/validate';
 import type { BoardRepository } from './repository';
 
 interface Client {
@@ -38,12 +38,18 @@ export class Rooms {
   private ping() {
     for (const room of this.rooms.values()) {
       for (const c of room.values()) {
+        // ping() на закрывающемся сокете бросает исключение — в таймере это уронило бы процесс
+        if (c.ws.readyState !== c.ws.OPEN) continue;
         if (!c.alive) {
           c.ws.terminate();
           continue;
         }
         c.alive = false;
-        c.ws.ping();
+        try {
+          c.ws.ping();
+        } catch {
+          c.ws.terminate();
+        }
       }
     }
   }
@@ -161,11 +167,18 @@ export class Rooms {
     switch (msg.t) {
       case 'ops': {
         if (typeof msg.seq !== 'number') return;
-        const ops = sanitizeOps(msg.ops);
+        const { ops, rejected } = sanitizeOpsReport(msg.ops);
         if (ops.length && this.repo.applyOps(boardId, ops)) {
           this.broadcast(boardId, { t: 'ops', from: peer.clientId, ops }, peer.clientId);
         }
         this.send(client.ws, { t: 'ack', seq: msg.seq });
+        // Часть данных не прошла валидацию: присылаем отправителю актуальное состояние
+        // затронутых объектов (после ack — его отметки pending уже сняты, коррекция применится).
+        if (rejected.length) {
+          const items = this.repo.get(boardId)?.items ?? {};
+          const fix: Op[] = rejected.map((id) => (items[id] ? { t: 'add', item: items[id] } : { t: 'delete', id }));
+          this.send(client.ws, { t: 'ops', from: 'server', ops: fix });
+        }
         break;
       }
       case 'cursor': {

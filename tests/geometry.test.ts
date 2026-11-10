@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { makeConnector, makeShape } from '../src/shared/defaults';
+import { makeConnector, makeFrame, makeShape, makeSticky } from '../src/shared/defaults';
 import {
   boundsOf,
   connectorGeometry,
   distToPath,
+  frameChildren,
   normalizeRect,
   rectContains,
   rectsIntersect,
@@ -94,5 +95,20 @@ describe('штрихи', () => {
   it('расстояние до штриха', () => {
     const p = { x: 10, y: 10, points: [0, 0, 100, 0] };
     expect(distToPath({ x: 60, y: 15 }, p)).toBeCloseTo(5);
+  });
+});
+
+describe('содержимое фрейма', () => {
+  it('включает вложенные фреймы, их содержимое и коннекторы; исключает частично выступающие', () => {
+    const items = {
+      f: makeFrame('f', 0, 0, 1000, 1000, 1, 'F'),
+      inner: makeFrame('inner', 100, 100, 400, 400, 2, 'Inner'),
+      deep: makeSticky('deep', 150, 150, 3, '#fff'),
+      half: makeSticky('half', 900, 900, 4, '#fff'),
+      line: makeConnector('line', { x: 10, y: 10 }, { x: 600, y: 600 }, 5, { lineStyle: 'straight' }),
+      long: makeConnector('long', { x: 10, y: 10 }, { x: 1600, y: 600 }, 6, { lineStyle: 'straight' }),
+    };
+    expect(frameChildren(items.f, items).sort()).toEqual(['deep', 'inner', 'line']);
+    expect(frameChildren(items.inner, items)).toEqual(['deep']);
   });
 });

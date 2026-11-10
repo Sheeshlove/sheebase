@@ -158,6 +158,33 @@ describe('WebSocket-комнаты', () => {
     expect(saved.meta.name).toBe('Новое имя');
   });
 
+  it('данные, не прошедшие валидацию, исправляются у отправителя', async () => {
+    const meta = await json<BoardMeta>(
+      await fetch(`${base}/api/boards`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }),
+    );
+    const a = new TestClient(server.port);
+    const b = new TestClient(server.port);
+    await Promise.all([a.open(), b.open()]);
+    a.send({ t: 'hello', boardId: meta.id, user: { id: 'ua', name: 'A', color: '#e03131' } });
+    await a.wait('init');
+    b.send({ t: 'hello', boardId: meta.id, user: { id: 'ub', name: 'B', color: '#1971c2' } });
+    await b.wait('init');
+    const st = makeSticky('fix1', 0, 0, 1, '#fff', 'ok');
+    a.send({ t: 'ops', seq: 1, ops: [{ t: 'add', item: st }] });
+    await a.wait('ack');
+    await b.wait('ops');
+    // слишком длинный текст — поле отбрасывается, x применяется
+    a.send({ t: 'ops', seq: 2, ops: [{ t: 'update', id: 'fix1', patch: { x: 50, text: 'т'.repeat(30_000) } }] });
+    expect(await a.wait('ack')).toEqual({ t: 'ack', seq: 2 });
+    const fix = await a.wait('ops');
+    expect(fix.from).toBe('server');
+    expect(fix.ops).toEqual([{ t: 'add', item: { ...st, x: 50 } }]);
+    const relayed = await b.wait('ops');
+    expect(relayed.ops).toEqual([{ t: 'update', id: 'fix1', patch: { x: 50 } }]);
+    a.close();
+    b.close();
+  });
+
   it('несуществующая доска → ошибка not_found', async () => {
     const c = new TestClient(server.port);
     await c.open();

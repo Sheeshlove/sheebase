@@ -17,8 +17,7 @@ import { PALETTE, SHAPE_KINDS, STICKY_COLORS } from '../../shared/defaults';
 import { shapePath } from '../../shared/geometry';
 import type { LineStyle, ShapeKind } from '../../shared/types';
 import { Swatches } from '../ui/Popover';
-import { insertImageFile, setTool } from './actions';
-import { board } from './controller';
+import { insertImageFile, redo, setTool, undo } from './actions';
 import { setState, type Tool, useBoard } from './store';
 
 function ToolButton({
@@ -182,10 +181,10 @@ export function Toolbar() {
         />
       </div>
       <div className="toolbar panel" data-ui>
-        <button type="button" className="tool-btn" disabled={!canUndo} onClick={() => board.undo()} title="Отменить (Ctrl+Z)" aria-label="Отменить">
+        <button type="button" className="tool-btn" disabled={!canUndo} onClick={undo} title="Отменить (Ctrl+Z)" aria-label="Отменить">
           <Undo2 size={20} />
         </button>
-        <button type="button" className="tool-btn" disabled={!canRedo} onClick={() => board.redo()} title="Повторить (Ctrl+Shift+Z)" aria-label="Повторить">
+        <button type="button" className="tool-btn" disabled={!canRedo} onClick={redo} title="Повторить (Ctrl+Shift+Z)" aria-label="Повторить">
           <Redo2 size={20} />
         </button>
       </div>

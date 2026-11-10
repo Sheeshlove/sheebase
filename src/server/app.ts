@@ -109,7 +109,17 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
 
   // ---------- Статика (собранный клиент) ----------
   if (opts.staticDir && fs.existsSync(path.join(opts.staticDir, 'index.html'))) {
-    app.use(express.static(opts.staticDir, { index: 'index.html', maxAge: '1h' }));
+    app.use(
+      express.static(opts.staticDir, {
+        index: 'index.html',
+        setHeaders(res, filePath) {
+          // index.html всегда перепроверяется (иначе после пересборки он сошлётся на удалённые ассеты),
+          // файлы из assets/ содержат хеш в имени и неизменяемы
+          if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+          else if (filePath.includes(`${path.sep}assets${path.sep}`)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        },
+      }),
+    );
   } else if (!opts.quiet) {
     app.get('/', (_req, res) => {
       res

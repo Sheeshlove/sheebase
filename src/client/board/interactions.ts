@@ -14,19 +14,23 @@ import {
 import { uid } from '../../shared/ops';
 import type { ConnectorItem, Endpoint, Item, ItemMap, ItemPatch, Op, Side } from '../../shared/types';
 import {
+  canEditText,
+  computeMoveSet,
+  createAndEdit,
   createFrame,
   createShape,
   createSticky,
   createText,
   expandGroups,
   insertImageFile,
+  type MoveSet,
+  moveOps,
   nextZ,
   quickCreate,
   setSelection,
   setTool,
   startEditing,
   stopEditing,
-  canEditText,
 } from './actions';
 import { board } from './controller';
 import { type Camera, getState, type Guide, screenToWorld, setState } from './store';
@@ -48,8 +52,9 @@ type Mode =
       wasSelected: boolean;
       shift: boolean;
       started: boolean;
-      orig: Map<string, Pt>;
-      conns: Map<string, { from?: Pt; to?: Pt }>;
+      /** Что сдвигается и исходное состояние доски на момент начала перетаскивания. */
+      set: MoveSet | null;
+      base: ItemMap | null;
       box: Rect | null;
       candidates: Rect[];
     }
@@ -154,8 +159,8 @@ export class Interactions {
             wasSelected,
             shift: e.shiftKey,
             started: false,
-            orig: new Map(),
-            conns: new Map(),
+            set: null,
+            base: null,
             box: null,
             candidates: [],
           };
@@ -173,18 +178,14 @@ export class Interactions {
         }
         return;
       }
-      case 'sticky': {
-        const id = createSticky(w);
+      case 'sticky':
         setState({ tool: 'select' });
-        startEditing(id);
+        createAndEdit(() => createSticky(w));
         return;
-      }
-      case 'text': {
-        const id = createText(w);
+      case 'text':
         setState({ tool: 'select' });
-        startEditing(id);
+        createAndEdit(() => createText(w));
         return;
-      }
       case 'shape':
       case 'frame':
         this.mode = { kind: 'create', type: st.tool, start: w, sx: e.clientX, sy: e.clientY, id: null };
@@ -418,17 +419,18 @@ export class Interactions {
         setState({ interaction: null });
         break;
       case 'create': {
+        setState({ tool: 'select', interaction: null });
         if (!m.id) {
-          const id =
-            m.type === 'shape'
-              ? createShape(st.shapeKind, r2(m.start.x - 100), r2(m.start.y - 100), 200, 200)
-              : createFrame(r2(m.start.x - 400), r2(m.start.y - 300), 800, 600);
-          setState({ tool: 'select' });
-          if (m.type === 'shape') startEditing(id);
+          if (m.type === 'shape') {
+            createAndEdit(() => createShape(st.shapeKind, r2(m.start.x - 100), r2(m.start.y - 100), 200, 200));
+          } else {
+            createFrame(r2(m.start.x - 400), r2(m.start.y - 300), 800, 600);
+          }
         } else {
-          board.commit();
-          setState({ tool: 'select', interaction: null, selection: [m.id] });
+          // создание протягиванием и ввод текста — один шаг истории
+          setSelection([m.id]);
           if (m.type === 'shape') startEditing(m.id);
+          board.commit();
         }
         break;
       }
@@ -479,6 +481,21 @@ export class Interactions {
     }
   }
 
+  /**
+   * Браузер прервал жест (pointercancel: перехват прокрутки, системный жест, отказ от касания ладонью) —
+   * незавершённое действие откатывается, а не фиксируется.
+   */
+  pointerCancel(e: PointerEvent) {
+    this.pointers.delete(e.pointerId);
+    try {
+      this.el.releasePointerCapture(e.pointerId);
+    } catch {
+      /* уже отпущен */
+    }
+    if (this.mode.kind === 'pinch' && this.pointers.size >= 2) return;
+    this.cancel();
+  }
+
   /** Прервать текущее действие и откатить его изменения (Esc). */
   cancel() {
     const m = this.mode;
@@ -492,48 +509,22 @@ export class Interactions {
   private beginMove(m: Extract<Mode, { kind: 'move' }>) {
     const st = getState();
     const items = st.items;
-    m.started = true;
-    const sel = st.selection.map((id) => items[id]).filter((x): x is Item => !!x && !x.locked);
-    const moving = new Set<string>();
-    const frames: Item[] = [];
-    for (const it of sel) {
-      if (it.type === 'connector') continue;
-      moving.add(it.id);
-      if (it.type === 'frame') frames.push(it);
-    }
-    // содержимое фреймов движется вместе с ними
-    for (const f of frames) {
-      for (const id in items) {
-        const it = items[id];
-        if (it.id === f.id || it.type === 'connector' || it.locked) continue;
-        if (rectContains(f, it)) moving.add(it.id);
-      }
-    }
-    for (const id of moving) m.orig.set(id, { x: items[id].x, y: items[id].y });
-    // свободные концы выделенных коннекторов и коннекторов внутри фреймов
-    const selected = new Set(st.selection);
-    for (const id in items) {
-      const c = items[id];
-      if (c.type !== 'connector' || c.locked) continue;
-      const inFrame = frames.some((f) => rectContains(f, itemBounds(c, items)));
-      if (!selected.has(id) && !inFrame) continue;
-      const entry: { from?: Pt; to?: Pt } = {};
-      if (!c.from.itemId || !items[c.from.itemId]) entry.from = { x: c.from.x, y: c.from.y };
-      if (!c.to.itemId || !items[c.to.itemId]) entry.to = { x: c.to.x, y: c.to.y };
-      if (entry.from || entry.to) m.conns.set(id, entry);
-    }
-    if (m.orig.size === 0 && m.conns.size === 0) {
-      m.started = false;
+    const set = computeMoveSet(st.selection, items);
+    // нечего двигать (например, всё выделенное заблокировано)
+    if (moveOps(set, items, 0, 0).length === 0) {
       this.mode = { kind: 'none' };
       return;
     }
-    m.box = boundsOf([...moving], items);
+    m.started = true;
+    m.set = set;
+    m.base = items;
+    m.box = boundsOf([...set.items], items);
     // кандидаты для привязки — видимые неподвижные объекты
     const vp = this.viewRect();
     m.candidates = [];
     for (const id in items) {
       const it = items[id];
-      if (moving.has(id) || it.type === 'connector') continue;
+      if (set.items.has(id) || set.conns.has(id) || it.type === 'connector') continue;
       const b = itemBounds(it, items);
       if (rectsIntersect(b, vp)) m.candidates.push(b);
       if (m.candidates.length > 400) break;
@@ -559,18 +550,7 @@ export class Interactions {
       dy = snapped.dy;
       guides = snapped.guides;
     }
-    const ops: Op[] = [];
-    for (const [id, o] of m.orig) ops.push({ t: 'update', id, patch: { x: r2(o.x + dx), y: r2(o.y + dy) } });
-    const items = getState().items;
-    for (const [id, o] of m.conns) {
-      const c = items[id];
-      if (!c || c.type !== 'connector') continue;
-      const patch: ItemPatch = {};
-      if (o.from) patch.from = { ...c.from, x: r2(o.from.x + dx), y: r2(o.from.y + dy) };
-      if (o.to) patch.to = { ...c.to, x: r2(o.to.x + dx), y: r2(o.to.y + dy) };
-      ops.push({ t: 'update', id, patch });
-    }
-    board.apply(ops);
+    board.apply(moveOps(m.set!, m.base!, dx, dy));
     setState({ guides });
   }
 
@@ -695,8 +675,7 @@ export class Interactions {
     if (!item || el!.dataset.frameBody) {
       // двойной клик по пустому месту — новый стикер
       const w = this.world(e);
-      const nid = createSticky(w);
-      startEditing(nid);
+      createAndEdit(() => createSticky(w));
     }
   }
 

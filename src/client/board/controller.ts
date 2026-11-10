@@ -46,6 +46,10 @@ class BoardController {
   private selectionTimer: ReturnType<typeof setTimeout> | null = null;
   private cameraTimer: ReturnType<typeof setTimeout> | null = null;
   private unsubscribe: (() => void) | null = null;
+  /** Переименование, сделанное без связи, — отправляется после переподключения. */
+  private pendingRename: string | null = null;
+  /** При закрытии вкладки досылаем пакет, ещё не ушедший по таймеру (до 30 мс правок). */
+  private readonly onPageHide = () => this.flush();
 
   private undoStack: HistoryEntry[] = [];
   private redoStack: HistoryEntry[] = [];
@@ -57,16 +61,24 @@ class BoardController {
 
   // ------------------------------------------------------------------ жизненный цикл
 
-  open(boardId: string) {
-    this.close();
-    this.disposed = false;
+  /** Сброс локального состояния (история, транзакции, синхронизация) — при открытии доски и в тестах. */
+  resetLocal() {
     this.fatal = false;
     this.hadInit = false;
+    this.ready = false;
     this.engine = new SyncEngine();
     this.undoStack = [];
     this.redoStack = [];
     this.tx = null;
     this.txDepth = 0;
+    this.pendingRename = null;
+    setState({ canUndo: false, canRedo: false });
+  }
+
+  open(boardId: string) {
+    this.close();
+    this.disposed = false;
+    this.resetLocal();
     const keep = getState();
     useBoard.setState(
       {
@@ -85,6 +97,7 @@ class BoardController {
       if (s.selection !== prev.selection) this.scheduleSelection();
       if (s.camera !== prev.camera) this.scheduleCameraSave();
     });
+    window.addEventListener('pagehide', this.onPageHide);
     this.connect();
   }
 
@@ -92,6 +105,7 @@ class BoardController {
     this.disposed = true;
     this.unsubscribe?.();
     this.unsubscribe = null;
+    if (typeof window !== 'undefined') window.removeEventListener('pagehide', this.onPageHide);
     for (const t of [this.reconnectTimer, this.flushTimer, this.cursorTimer, this.selectionTimer, this.cameraTimer]) {
       if (t) clearTimeout(t);
     }
@@ -176,6 +190,12 @@ class BoardController {
         this.ready = true;
         this.reconnectDelay = 500;
         for (const b of resend) this.send({ t: 'ops', seq: b.seq, ops: b.ops });
+        if (this.pendingRename !== null) {
+          const name = this.pendingRename;
+          this.pendingRename = null;
+          setState({ meta: { ...msg.meta, name } });
+          this.send({ t: 'rename', name });
+        }
         this.send({ t: 'selection', ids: getState().selection });
         if (!this.hadInit) {
           this.hadInit = true;
@@ -281,7 +301,8 @@ class BoardController {
   rename(name: string) {
     const meta = getState().meta;
     if (meta) setState({ meta: { ...meta, name } });
-    this.send({ t: 'rename', name });
+    if (this.ready) this.send({ t: 'rename', name });
+    else this.pendingRename = name;
   }
 
   // ------------------------------------------------------------------ изменения и история

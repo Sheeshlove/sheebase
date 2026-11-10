@@ -101,23 +101,47 @@ export function sanitizeItem(raw: unknown): Item | null {
   return { ...patch, id: raw.id, type } as Item;
 }
 
-export function sanitizeOps(raw: unknown): Op[] {
-  if (!Array.isArray(raw)) return [];
-  const out: Op[] = [];
+export interface SanitizeReport {
+  ops: Op[];
+  /**
+   * Объекты, операции над которыми были отброшены или урезаны валидацией.
+   * Отправителю нужно прислать их актуальное состояние, иначе его копия разойдётся с сервером.
+   */
+  rejected: string[];
+}
+
+export function sanitizeOpsReport(raw: unknown): SanitizeReport {
+  const report: SanitizeReport = { ops: [], rejected: [] };
+  if (!Array.isArray(raw)) return report;
+  const reject = (id: unknown) => {
+    if (isId(id) && !report.rejected.includes(id)) report.rejected.push(id);
+  };
   for (const op of raw.slice(0, LIMITS.opsPerMessage)) {
     if (!isObj(op)) continue;
     if (op.t === 'add') {
       const item = sanitizeItem(op.item);
-      if (item) out.push({ t: 'add', item });
+      if (!item) {
+        reject(isObj(op.item) ? op.item.id : undefined);
+        continue;
+      }
+      // поля проверяются без преобразования, поэтому «урезан» = потерял часть ключей
+      if (Object.keys(item).length !== Object.keys(op.item as object).length) reject(item.id);
+      report.ops.push({ t: 'add', item });
     } else if (op.t === 'update') {
       if (!isId(op.id)) continue;
       const patch = sanitizePatch(op.patch);
-      if (patch) out.push({ t: 'update', id: op.id, patch });
+      const rawKeys = isObj(op.patch) ? Object.keys(op.patch).length : 0;
+      if (!patch || Object.keys(patch).length !== rawKeys) reject(op.id);
+      if (patch) report.ops.push({ t: 'update', id: op.id, patch });
     } else if (op.t === 'delete') {
-      if (isId(op.id)) out.push({ t: 'delete', id: op.id });
+      if (isId(op.id)) report.ops.push({ t: 'delete', id: op.id });
     }
   }
-  return out;
+  return report;
+}
+
+export function sanitizeOps(raw: unknown): Op[] {
+  return sanitizeOpsReport(raw).ops;
 }
 
 export function sanitizeName(raw: unknown, fallback: string): string {

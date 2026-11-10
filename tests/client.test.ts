@@ -1,17 +1,27 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { cloneItems } from '../src/client/board/actions';
+import {
+  cloneItems,
+  computeMoveSet,
+  createAndEdit,
+  createSticky,
+  createText,
+  nudgeSelection,
+  quickCreate,
+  stopEditing,
+  updateItems,
+} from '../src/client/board/actions';
 import { board } from '../src/client/board/controller';
 import { snapMove } from '../src/client/board/interactions';
 import { getState, initialBoardState, useBoard } from '../src/client/board/store';
-import { makeConnector, makeShape, makeSticky } from '../src/shared/defaults';
-import type { ConnectorItem } from '../src/shared/types';
+import { makeConnector, makeFrame, makeShape, makeSticky, makeText } from '../src/shared/defaults';
+import type { ConnectorItem, ItemMap, StickyItem } from '../src/shared/types';
 
 beforeEach(() => {
   useBoard.setState(initialBoardState(), true);
-  // сбрасываем историю контроллера (без сетевого подключения)
-  while (getState().canUndo) board.undo();
-  useBoard.setState(initialBoardState(), true);
+  board.resetLocal();
 });
+
+const load = (items: ItemMap) => useBoard.setState({ items });
 
 describe('контроллер: транзакции и история', () => {
   it('add → undo → redo', () => {
@@ -101,5 +111,100 @@ describe('умные направляющие', () => {
   it('не притягивает за пределами порога', () => {
     const r = snapMove({ x: 0, y: 0, w: 100, h: 100 }, 80, 37, [{ x: 200, y: 300, w: 100, h: 100 }], 6);
     expect(r).toEqual({ dx: 80, dy: 37, guides: [] });
+  });
+});
+
+describe('регрессии: создание и ввод текста', () => {
+  it('брошенный пустой текст не оставляет «фантома» в истории', () => {
+    createAndEdit(() => createText({ x: 0, y: 0 }));
+    expect(getState().editingId).not.toBeNull();
+    stopEditing();
+    expect(Object.keys(getState().items)).toEqual([]);
+    expect(getState().canUndo).toBe(false);
+  });
+
+  it('создание стикера и ввод текста — один шаг отмены', () => {
+    const id = createAndEdit(() => createSticky({ x: 0, y: 0 }));
+    updateItems([{ id, patch: { text: 'а' } }]);
+    updateItems([{ id, patch: { text: 'абв' } }]);
+    stopEditing();
+    expect((getState().items[id] as StickyItem).text).toBe('абв');
+    board.undo();
+    expect(getState().items[id]).toBeUndefined();
+    expect(getState().canUndo).toBe(false);
+  });
+
+  it('быстрое создание у текста без ввода — копия и коннектор исчезают', () => {
+    load({ t1: makeText('t1', 0, 0, 1, 'Исходный') });
+    quickCreate('t1', 'right');
+    expect(Object.values(getState().items).some((i) => i.type === 'connector')).toBe(true);
+    stopEditing();
+    const items = Object.values(getState().items);
+    expect(items.map((i) => i.id)).toEqual(['t1']);
+    expect(getState().canUndo).toBe(false);
+  });
+
+  it('очищенный текст удаляется вместе с привязанными коннекторами (и восстанавливается одним undo)', () => {
+    load({
+      t1: makeText('t1', 0, 0, 1, 'Текст'),
+      s1: makeSticky('s1', 400, 0, 2, '#fff'),
+      c1: makeConnector('c1', { itemId: 't1', side: 'auto', x: 0, y: 0 }, { itemId: 's1', side: 'auto', x: 0, y: 0 }, 3),
+    });
+    board.begin();
+    useBoard.setState({ editingId: 't1' });
+    updateItems([{ id: 't1', patch: { text: '   ' } }]);
+    stopEditing();
+    expect(Object.keys(getState().items).sort()).toEqual(['s1']);
+    board.undo();
+    expect(Object.keys(getState().items).sort()).toEqual(['c1', 's1', 't1']);
+  });
+});
+
+describe('регрессии: перемещение содержимого фрейма', () => {
+  const items = (): ItemMap => ({
+    f: makeFrame('f', 0, 0, 1000, 1000, 1, 'Фрейм'),
+    a: makeSticky('a', 100, 100, 2, '#fff'),
+    l: { ...makeSticky('l', 400, 100, 3, '#fff'), locked: true },
+    c: makeConnector('c', { x: 50, y: 50 }, { x: 300, y: 50 }, 4, { lineStyle: 'straight' }),
+    out: makeSticky('out', 2000, 0, 5, '#fff'),
+  });
+
+  it('computeMoveSet: фрейм переносит всё содержимое, включая коннекторы и заблокированные объекты', () => {
+    const set = computeMoveSet(['f'], items());
+    expect([...set.items].sort()).toEqual(['a', 'f', 'l']);
+    expect([...set.conns]).toEqual(['c']);
+  });
+
+  it('computeMoveSet: выделенный заблокированный объект не двигается', () => {
+    const set = computeMoveSet(['l', 'out'], items());
+    expect([...set.items]).toEqual(['out']);
+  });
+
+  it('стрелки двигают фрейм вместе с содержимым (как перетаскивание)', () => {
+    load(items());
+    useBoard.setState({ selection: ['f'] });
+    nudgeSelection(10, 0);
+    const it = getState().items;
+    expect(it.f.x).toBe(10);
+    expect(it.a.x).toBe(110);
+    expect(it.l.x).toBe(410);
+    expect((it.c as ConnectorItem).from.x).toBe(60);
+    expect(it.out.x).toBe(2000);
+  });
+});
+
+describe('регрессии: переименование без связи', () => {
+  it('отправляется после переподключения и не затирается снимком сервера', () => {
+    useBoard.setState({ meta: { id: 'b', name: 'Старое', createdAt: 0, updatedAt: 0 } });
+    board.rename('Новое');
+    expect(getState().meta?.name).toBe('Новое');
+    (board as unknown as { onMessage(m: unknown): void }).onMessage({
+      t: 'init',
+      meta: { id: 'b', name: 'Старое', createdAt: 0, updatedAt: 0 },
+      items: {},
+      peers: [],
+      clientId: 'c1',
+    });
+    expect(getState().meta?.name).toBe('Новое');
   });
 });

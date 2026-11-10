@@ -8,6 +8,7 @@ import {
   insertImageFile,
   nudgeSelection,
   pasteText,
+  redo,
   selectAll,
   sendToBack,
   serializeSelection,
@@ -15,6 +16,7 @@ import {
   setTool,
   startEditing,
   toggleLock,
+  undo,
   ungroupSelection,
   zoomToSelection,
 } from './actions';
@@ -66,11 +68,11 @@ function onKeyDown(e: KeyboardEvent) {
     let handled = true;
     switch (code) {
       case 'KeyZ':
-        if (e.shiftKey) board.redo();
-        else board.undo();
+        if (e.shiftKey) redo();
+        else undo();
         break;
       case 'KeyY':
-        board.redo();
+        redo();
         break;
       case 'KeyA':
         selectAll();
