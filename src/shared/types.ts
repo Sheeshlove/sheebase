@@ -29,6 +29,10 @@ export interface BaseItem {
   z: number;
   locked?: boolean | null;
   groupId?: string | null;
+  /** Ссылка (http/https), открывается значком на объекте. */
+  link?: string | null;
+  /** Имя автора (для стикеров, созданных на доске). */
+  author?: string | null;
 }
 
 export interface StickyItem extends BaseItem {
@@ -136,24 +140,147 @@ export interface Peer extends UserInfo {
   clientId: string;
 }
 
+/** Видимая область участника в мировых координатах. */
+export interface ViewRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Участник вместе с его последним присутствием (для init). */
+export interface PeerPresence extends Peer {
+  view: ViewRect | null;
+  selection: string[];
+  editing: string | null;
+}
+
+// ---- Сессионные данные (сервер-авторитетные) ----
+
+export interface TimerState {
+  /** Длительность последнего запуска, мс. */
+  durationMs: number;
+  /** Момент окончания по часам сервера, если таймер идёт. */
+  endsAt: number | null;
+  /** Остаток, мс (актуален на паузе). */
+  remainingMs: number;
+  running: boolean;
+  /** Кто запустил. */
+  by: string;
+}
+
+/** Голосование так, как его видит конкретный участник. */
+export interface VotingView {
+  id: string;
+  status: 'active' | 'ended';
+  votesPerUser: number;
+  startedBy: string;
+  startedAt: number;
+  endedAt: number | null;
+  /** Свои голоса: itemId → количество. */
+  myVotes: Record<string, number>;
+  /** Сколько участников уже голосовало. */
+  voters: number;
+  /** Итоги (только после завершения). */
+  results: Record<string, number> | null;
+}
+
+export interface SessionView {
+  timer: TimerState | null;
+  voting: VotingView | null;
+}
+
+export interface CommentMessage {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorColor: string;
+  text: string;
+  createdAt: number;
+}
+
+export interface CommentThread {
+  id: string;
+  /** Абсолютная позиция (для свободного треда или если объект удалён). */
+  x: number;
+  y: number;
+  /** Объект, к которому привязан тред, и смещение от его левого верхнего угла. */
+  itemId: string | null;
+  dx: number;
+  dy: number;
+  resolved: boolean;
+  createdAt: number;
+  updatedAt: number;
+  messages: CommentMessage[];
+}
+
+export type CommentAction =
+  | { action: 'create'; x: number; y: number; itemId?: string | null; text: string }
+  | { action: 'reply'; threadId: string; text: string }
+  | { action: 'resolve'; threadId: string; resolved: boolean }
+  | { action: 'deleteMessage'; threadId: string; messageId: string }
+  | { action: 'delete'; threadId: string };
+
+export type TimerAction =
+  | { action: 'start'; durationMs: number }
+  | { action: 'pause' }
+  | { action: 'resume' }
+  | { action: 'add'; deltaMs: number }
+  | { action: 'reset' };
+
+export type VotingAction = { action: 'start'; votesPerUser: number } | { action: 'end' } | { action: 'clear' };
+
+export interface VersionMeta {
+  id: string;
+  name: string;
+  createdAt: number;
+  auto: boolean;
+  itemCount: number;
+}
+
 // ---- Протокол WebSocket ----
 
 export type ClientMessage =
   | { t: 'hello'; boardId: string; user: UserInfo }
   | { t: 'ops'; seq: number; ops: Op[] }
   | { t: 'cursor'; x: number | null; y: number | null }
-  | { t: 'selection'; ids: string[] }
-  | { t: 'rename'; name: string };
+  | { t: 'selection'; ids: string[]; editing?: string | null }
+  | { t: 'rename'; name: string }
+  | { t: 'user'; user: { name: string; color: string } }
+  | { t: 'view'; rect: ViewRect }
+  | { t: 'summon' }
+  | ({ t: 'timer' } & TimerAction)
+  | ({ t: 'voting' } & VotingAction)
+  | { t: 'vote'; itemId: string; delta: 1 | -1 }
+  | ({ t: 'comment' } & CommentAction);
 
 export type ServerMessage =
-  | { t: 'init'; meta: BoardMeta; items: ItemMap; peers: Peer[]; clientId: string }
+  | {
+      t: 'init';
+      meta: BoardMeta;
+      items: ItemMap;
+      peers: PeerPresence[];
+      clientId: string;
+      comments: Record<string, CommentThread>;
+      session: SessionView;
+      /** Время сервера — для синхронизации часов (таймер). */
+      now: number;
+    }
   | { t: 'ack'; seq: number }
   | { t: 'ops'; from: string; ops: Op[] }
-  | { t: 'join'; peer: Peer }
+  | { t: 'join'; peer: PeerPresence }
   | { t: 'leave'; clientId: string }
+  | { t: 'peer'; peer: Peer }
   | { t: 'cursor'; from: string; x: number | null; y: number | null }
-  | { t: 'selection'; from: string; ids: string[] }
+  | { t: 'selection'; from: string; ids: string[]; editing: string | null }
+  | { t: 'view'; from: string; rect: ViewRect }
+  | { t: 'summon'; from: string }
   | { t: 'meta'; meta: BoardMeta }
+  | { t: 'session'; session: SessionView; now: number }
+  | { t: 'thread'; thread: CommentThread }
+  | { t: 'thread-delete'; id: string }
+  | { t: 'reset'; items: ItemMap; reason: string }
+  | { t: 'notice'; message: string }
   | { t: 'error'; code: 'not_found' | 'deleted' | 'bad_request'; message: string };
 
 export interface TemplateInfo {

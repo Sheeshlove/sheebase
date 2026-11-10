@@ -4,7 +4,8 @@ import path from 'node:path';
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import { TEMPLATES } from '../shared/templates';
-import { sanitizeName } from '../shared/validate';
+import { renderThumbnailSvg } from '../shared/thumbnail';
+import { isValidId, sanitizeName } from '../shared/validate';
 import { BoardRepository } from './repository';
 import { Rooms } from './rooms';
 
@@ -14,6 +15,10 @@ export interface ServerOptions {
   /** Каталог собранного клиента (dist/client). Если не существует — статика не раздаётся. */
   staticDir?: string;
   saveDelayMs?: number;
+  /** Интервал автоматических снимков версий (по умолчанию 10 минут). */
+  autoSnapshotMs?: number;
+  /** Источник времени (подменяется в тестах). */
+  now?: () => number;
   quiet?: boolean;
 }
 
@@ -24,7 +29,7 @@ export interface RunningServer {
 }
 
 export async function startServer(opts: ServerOptions): Promise<RunningServer> {
-  const repo = new BoardRepository(opts.dataDir, opts.saveDelayMs);
+  const repo = new BoardRepository(opts.dataDir, { saveDelayMs: opts.saveDelayMs, autoSnapshotMs: opts.autoSnapshotMs, now: opts.now });
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '1mb' }));
@@ -103,6 +108,69 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     }
     rooms.closeBoard(req.params.id);
     res.status(204).end();
+  });
+
+  // ---------- Миниатюры ----------
+
+  api.get('/boards/:id/thumbnail.svg', (req, res) => {
+    const board = repo.get(req.params.id);
+    if (!board) {
+      res.status(404).end();
+      return;
+    }
+    const etag = `"${board.meta.updatedAt}"`;
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', 'no-cache');
+    // SVG строится из проверенных данных, но на всякий случай запрещаем в нём скрипты
+    res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'");
+    if (req.headers['if-none-match'] === etag) {
+      res.status(304).end();
+      return;
+    }
+    res.type('image/svg+xml').send(renderThumbnailSvg(board.items));
+  });
+
+  // ---------- История версий ----------
+
+  api.get('/boards/:id/versions', (req, res) => {
+    if (!repo.get(req.params.id)) {
+      res.status(404).json({ error: 'not_found' });
+      return;
+    }
+    res.json(repo.versions.list(req.params.id));
+  });
+
+  api.post('/boards/:id/versions', (req, res) => {
+    const meta = repo.snapshot(req.params.id, sanitizeName(req.body?.name, 'Версия').slice(0, 120));
+    if (!meta) {
+      res.status(404).json({ error: 'not_found' });
+      return;
+    }
+    res.status(201).json(meta);
+  });
+
+  api.get('/boards/:id/versions/:vid', (req, res) => {
+    const v = repo.get(req.params.id) && isValidId(req.params.vid) ? repo.versions.get(req.params.id, req.params.vid) : null;
+    if (!v) {
+      res.status(404).json({ error: 'not_found' });
+      return;
+    }
+    res.json(v);
+  });
+
+  api.post('/boards/:id/versions/:vid/restore', (req, res) => {
+    const r = isValidId(req.params.vid) ? repo.restore(req.params.id, req.params.vid) : undefined;
+    if (!r) {
+      res.status(404).json({ error: 'not_found' });
+      return;
+    }
+    rooms.resetBoard(req.params.id, r.items, `Доска восстановлена из версии «${r.version.name}»`, r.threads);
+    res.json({ ok: true, version: r.version, itemCount: Object.keys(r.items).length });
+  });
+
+  api.delete('/boards/:id/versions/:vid', (req, res) => {
+    const ok = repo.get(req.params.id) && isValidId(req.params.vid) && repo.versions.remove(req.params.id, req.params.vid);
+    res.status(ok ? 204 : 404).end();
   });
 
   app.use('/api', api);

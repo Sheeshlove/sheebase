@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { makeConnector, makeSticky } from '../src/shared/defaults';
 import { buildTemplate, TEMPLATES } from '../src/shared/templates';
-import { sanitizeItem, sanitizeName, sanitizeOps, sanitizeOpsReport, sanitizePatch } from '../src/shared/validate';
+import {
+  isColor,
+  isLink,
+  sanitizeCommentText,
+  sanitizeItem,
+  sanitizeName,
+  sanitizeOps,
+  sanitizeOpsReport,
+  sanitizePatch,
+} from '../src/shared/validate';
 import { uid } from '../src/shared/ops';
 
 describe('валидация', () => {
@@ -69,5 +78,34 @@ describe('отчёт о валидации (коррекция отправит�
     ]);
     expect(r.rejected).toEqual(['cut', 'drop', 'extra', 'bad']);
     expect(r.ops.map((o) => (o.t === 'add' ? o.item.id : o.id))).toEqual(['ok', 'cut', 'extra', 'gone']);
+  });
+});
+
+describe('итерация 2: новые правила', () => {
+  it('цвета — только безопасные форматы', () => {
+    for (const ok of ['#fff', '#ffffffaa', '#1e1e1e', 'transparent', 'red', 'rgb(1, 2, 3)', 'rgba(10,20,30,0.5)']) expect(isColor(ok), ok).toBe(true);
+    for (const bad of ['', '#ggg', 'red" onload="x', 'url(javascript:alert(1))', 'rgb(1,2)', '<b>']) expect(isColor(bad), bad).toBe(false);
+  });
+
+  it('ссылки — только http(s) без пробелов и кавычек', () => {
+    expect(isLink('https://example.com/a?b=c#d')).toBe(true);
+    expect(isLink('http://localhost:3000')).toBe(true);
+    for (const bad of ['javascript:alert(1)', 'ftp://x', 'https://a b', 'https://x"y', 'https://' + 'a'.repeat(2001)]) {
+      expect(isLink(bad), bad.slice(0, 30)).toBe(false);
+    }
+  });
+
+  it('поля link и author у объектов', () => {
+    expect(sanitizePatch({ link: 'https://x.ru', author: 'Анна' })).toEqual({ link: 'https://x.ru', author: 'Анна' });
+    expect(sanitizePatch({ link: null, author: null })).toEqual({ link: null, author: null });
+    expect(sanitizePatch({ link: 'javascript:alert(1)' })).toBeNull();
+    expect(sanitizePatch({ author: 'a\u0000b' })).toBeNull();
+  });
+
+  it('текст комментария', () => {
+    expect(sanitizeCommentText('  привет\nмир  ')).toBe('привет\nмир');
+    expect(sanitizeCommentText('a\u0007b')).toBe('ab');
+    expect(sanitizeCommentText('   ')).toBeNull();
+    expect(sanitizeCommentText(42)).toBeNull();
   });
 });

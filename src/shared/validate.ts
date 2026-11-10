@@ -11,6 +11,10 @@ export const LIMITS = {
   points: 40_000,
   opsPerMessage: 5_000,
   coordinate: 1e7,
+  link: 2_000,
+  author: 60,
+  comment: 2_000,
+  threadMessages: 500,
 };
 
 const ITEM_TYPES: ReadonlySet<ItemType> = new Set(['sticky', 'shape', 'text', 'frame', 'connector', 'path', 'image']);
@@ -26,6 +30,18 @@ const isNum = (v: unknown): v is number =>
   typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= LIMITS.coordinate;
 const isStr = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
 const isId = (v: unknown): v is string => isStr(v, LIMITS.idLength) && /^[A-Za-z0-9_-]+$/.test(v as string);
+
+/**
+ * Цвет: `#rgb[a]`, `#rrggbb[aa]`, `transparent`, имя цвета или `rgb()/rgba()`.
+ * Строгий шаблон — защита в глубину: значения попадают в атрибуты SVG (миниатюры, экспорт).
+ */
+const COLOR_RE =
+  /^(#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent|[a-zA-Z]{1,30}|rgba?\(\s*\d{1,3}(?:\.\d+)?%?\s*,\s*\d{1,3}(?:\.\d+)?%?\s*,\s*\d{1,3}(?:\.\d+)?%?\s*(?:,\s*(?:0|1|0?\.\d+)\s*)?\))$/;
+export const isColor = (v: unknown): v is string => isStr(v, LIMITS.color) && COLOR_RE.test(v as string);
+
+/** Ссылка на объекте: только http(s), без пробелов, кавычек и управляющих символов. */
+const LINK_RE = /^https?:\/\/[^\s"<>\u0000-\u001f\u007f]+$/i;
+export const isLink = (v: unknown): v is string => isStr(v, LIMITS.link) && LINK_RE.test(v as string);
 
 function validEndpoint(v: unknown): boolean {
   if (!isObj(v)) return false;
@@ -47,10 +63,12 @@ const FIELD_RULES: Record<string, Check> = {
   locked: (v) => v === null || typeof v === 'boolean',
   groupId: (v) => v === null || isId(v),
   text: (v) => isStr(v, LIMITS.text),
-  color: (v) => isStr(v, LIMITS.color),
-  fill: (v) => isStr(v, LIMITS.color),
-  stroke: (v) => isStr(v, LIMITS.color),
-  textColor: (v) => isStr(v, LIMITS.color),
+  color: isColor,
+  fill: isColor,
+  stroke: isColor,
+  textColor: isColor,
+  link: (v) => v === null || isLink(v),
+  author: (v) => v === null || (isStr(v, LIMITS.author) && !/[\u0000-\u001f]/.test(v as string)),
   strokeWidth: (v) => isNum(v) && v >= 0 && v <= 100,
   fontSize: (v) => isNum(v) && v > 0 && v <= 1000,
   shape: (v) => SHAPES.has(v as string),
@@ -149,3 +167,14 @@ export function sanitizeName(raw: unknown, fallback: string): string {
   const s = raw.replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 120);
   return s || fallback;
 }
+
+/** Текст комментария: обрезка пробелов, без управляющих символов (кроме переноса строки), 1–2000 символов. */
+export function sanitizeCommentText(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const text = raw.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim();
+  if (!text || text.length > LIMITS.comment) return null;
+  return text;
+}
+
+export const isValidId = isId;
+export const isFiniteCoord = isNum;
