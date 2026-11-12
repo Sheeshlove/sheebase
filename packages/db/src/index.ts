@@ -1,3 +1,5 @@
-// @shibase/db — drizzle-схема, миграции, клиент, репозитории.
-// Каркас этапа M0: содержимое появляется по плану docs/PLAN.md.
-export const PACKAGE = '@shibase/db' as const;
+export { createDb, type Db, type DbHandle } from './client';
+export { MIGRATIONS_DIR, runMigrations } from './migrate';
+export * as schema from './schema';
+
+export const PACKAGE = '@shibase/db';

@@ -69,8 +69,8 @@ await Promise.all([
   probe('SMTP (Mailpit)', env.SMTP_URL ?? 'smtp://localhost:1025', 1025),
 ]);
 
-// --- миграции: появятся в M1.1 (packages/db)
-add('warn', 'Миграции', 'проверка появится в M1.1 вместе с packages/db');
+// --- миграции: автоматической проверки пока нет (см. docs/STATUS.md)
+add('warn', 'Миграции', 'doctor их не проверяет: выполните pnpm db:migrate (повторный запуск безопасен)');
 
 const icon = { ok: '✓', warn: '!', fail: '✗' };
 for (const r of results) console.log(`${icon[r.level]} ${r.name.padEnd(18)} ${r.detail}`);

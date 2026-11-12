@@ -14,5 +14,20 @@
       "cache": false,
       "persistent": true
     }
-  }
+  },
+  "globalEnv": [
+    "NODE_ENV",
+    "DATABASE_URL",
+    "VALKEY_URL",
+    "S3_ENDPOINT",
+    "S3_REGION",
+    "S3_BUCKET",
+    "S3_ACCESS_KEY",
+    "S3_SECRET_KEY",
+    "SMTP_URL",
+    "LLM_PROVIDER",
+    "EMBEDDING_PROVIDER",
+    "SESSION_SECRET",
+    "COLLAB_JWT_SECRET"
+  ]
 }

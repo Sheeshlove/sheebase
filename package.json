@@ -19,7 +19,10 @@
     "infra:up": "docker compose -f infra/docker-compose.yml up -d --wait",
     "infra:down": "docker compose -f infra/docker-compose.yml down",
     "doctor": "node tools/doctor.mjs",
-    "licenses:check": "node tools/licenses-check.mjs"
+    "licenses:check": "node tools/licenses-check.mjs",
+    "db:generate": "pnpm --filter @shibase/db db:generate",
+    "db:migrate": "pnpm --filter @shibase/db db:migrate",
+    "db:reset": "pnpm --filter @shibase/db db:reset"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -5,16 +5,27 @@
   "type": "module",
   "description": "drizzle-схема, миграции, клиент, репозитории",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./test-db": "./src/test-db.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test:unit": "vitest run --passWithNoTests --exclude '**/*.int.test.ts' --exclude '**/node_modules/**'",
-    "test:int": "vitest run --passWithNoTests .int.test."
+    "test:int": "vitest run --passWithNoTests .int.test.",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx src/cli.ts migrate",
+    "db:reset": "tsx src/cli.ts reset"
   },
-  "dependencies": {},
+  "dependencies": {
+    "drizzle-orm": "^0.45.4",
+    "pg": "^8.23.1",
+    "uuid": "^14.0.3"
+  },
   "devDependencies": {
     "@shibase/config": "workspace:*",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.11",
+    "tsx": "^4.0.0"
   }
 }
