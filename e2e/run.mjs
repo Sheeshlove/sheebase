@@ -356,7 +356,7 @@ async function main() {
     const t = await B.textContent('[data-testid=timer-pill]');
     assert(/[23]:\d\d/.test(t), `таймер у второго участника: ${t}`);
     await A.click('[data-testid=timer-pill]');
-    await A.click('text=Сброс');
+    await A.click('[data-testid=timer-reset]');
     await B.waitForSelector('[data-testid=timer-button]');
   });
 
@@ -426,7 +426,7 @@ async function main() {
 
   await step('Автор стикера показывается по настройке «Вид»', async () => {
     await B.click('[data-testid=view-menu]');
-    await B.click('[data-testid=toggle-authors] input');
+    await B.click('[data-testid=toggle-authors]');
     await B.waitForSelector('.sticky-author');
     assert((await B.textContent('.sticky-author')) === 'Анна', 'неверный автор');
     await B.keyboard.press('Escape');

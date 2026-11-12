@@ -1,3 +1,4 @@
+import { BRAND, CONNECTOR_WIDTH, PALETTE as BRAND_PALETTE, STICKY_TONES } from './brand';
 import type {
   ConnectorItem,
   Endpoint,
@@ -10,40 +11,15 @@ import type {
   TextItem,
 } from './types';
 
+// Значения по умолчанию для объектов доски — по дизайн-системе ШИБЕЙС (см. shared/brand.ts).
+
 export const STICKY_SIZE = 200;
 
-export const STICKY_COLORS: { name: string; value: string }[] = [
-  { name: 'Жёлтый', value: '#fef3a6' },
-  { name: 'Оранжевый', value: '#ffd8a8' },
-  { name: 'Красный', value: '#ffc9c9' },
-  { name: 'Розовый', value: '#fcc2d7' },
-  { name: 'Фиолетовый', value: '#e5dbff' },
-  { name: 'Синий', value: '#c5dcff' },
-  { name: 'Голубой', value: '#c3f0f7' },
-  { name: 'Зелёный', value: '#c8f2c2' },
-  { name: 'Салатовый', value: '#e9f5b5' },
-  { name: 'Серый', value: '#e9ecef' },
-];
+/** Тона стикеров: «Идея», «Готово», «Заблокировано», «Нейтрально». */
+export const STICKY_COLORS: { name: string; value: string }[] = STICKY_TONES.map(({ name, value }) => ({ name, value }));
 
-/** Общая палитра для фигур, текста, линий, фреймов. */
-export const PALETTE: string[] = [
-  'transparent',
-  '#ffffff',
-  '#f1f3f5',
-  '#868e96',
-  '#1e1e1e',
-  '#ffc9c9',
-  '#ffd8a8',
-  '#ffec99',
-  '#b2f2bb',
-  '#a5d8ff',
-  '#d0bfff',
-  '#e03131',
-  '#f08c00',
-  '#2f9e44',
-  '#1971c2',
-  '#7048e8',
-];
+/** Палитра для фигур, текста, линий, пера. */
+export const PALETTE: string[] = BRAND_PALETTE.map((c) => c.value);
 
 export const SHAPE_KINDS: { kind: ShapeKind; name: string }[] = [
   { kind: 'rect', name: 'Прямоугольник' },
@@ -56,13 +32,16 @@ export const SHAPE_KINDS: { kind: ShapeKind; name: string }[] = [
   { kind: 'star', name: 'Звезда' },
 ];
 
-export const DEFAULT_TEXT_COLOR = '#1e1e1e';
-export const DEFAULT_LINE_COLOR = '#1e1e1e';
+/** Текст на белых карточках и заливках. */
+export const DEFAULT_TEXT_COLOR = BRAND.ink;
+/** Линии и текст на синем холсте. */
+export const DEFAULT_LINE_COLOR = BRAND.white;
 
 export function makeSticky(id: string, x: number, y: number, z: number, color: string, text = ''): StickyItem {
   return { id, type: 'sticky', x, y, w: STICKY_SIZE, h: STICKY_SIZE, z, text, color };
 }
 
+/** Фигура по умолчанию — белая карточка без обводки с чёрным текстом. */
 export function makeShape(
   id: string,
   shape: ShapeKind,
@@ -82,9 +61,9 @@ export function makeShape(
     w,
     h,
     z,
-    fill: '#ffffff',
-    stroke: '#1e1e1e',
-    strokeWidth: 2,
+    fill: BRAND.white,
+    stroke: BRAND.white,
+    strokeWidth: 0,
     text: '',
     fontSize: 20,
     textColor: DEFAULT_TEXT_COLOR,
@@ -92,6 +71,7 @@ export function makeShape(
   };
 }
 
+/** Текст на синем холсте — белый, жирный, не меньше 24px (иначе не хватает контраста). */
 export function makeText(
   id: string,
   x: number,
@@ -111,13 +91,14 @@ export function makeText(
     z,
     text,
     fontSize,
-    color: DEFAULT_TEXT_COLOR,
-    bold: false,
+    color: BRAND.white,
+    bold: true,
     align: 'left',
     ...extra,
   };
 }
 
+/** Фрейм — белая карточка со скруглением `radius-lg`. */
 export function makeFrame(
   id: string,
   x: number,
@@ -126,11 +107,12 @@ export function makeFrame(
   h: number,
   z: number,
   title: string,
-  fill = '#ffffff',
+  fill: string = BRAND.white,
 ): FrameItem {
   return { id, type: 'frame', x, y, w, h, z, title, fill };
 }
 
+/** Коннектор — белый пунктир бренда (6px). */
 export function makeConnector(
   id: string,
   from: Endpoint,
@@ -152,7 +134,7 @@ export function makeConnector(
     startArrow: 'none',
     endArrow: 'arrow',
     stroke: DEFAULT_LINE_COLOR,
-    strokeWidth: 2,
+    strokeWidth: CONNECTOR_WIDTH,
     label: '',
     ...extra,
   };

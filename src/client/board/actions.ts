@@ -17,6 +17,7 @@ import {
   resolveEnds,
   SIDE_NORMAL,
 } from '../../shared/geometry';
+import { BRAND, defaultShapeFill, groundAt, inkOn, migrateLegacyItem, shapeStyle } from '../../shared/brand';
 import { type AlignMode, alignDeltas, type Delta, distributeDeltas, frameOrder } from '../../shared/layout';
 import { uid } from '../../shared/ops';
 import { buildTemplate } from '../../shared/templates';
@@ -101,16 +102,26 @@ export function updateSelected(fn: (it: Item) => ItemPatch | null) {
 }
 
 /** «Основной цвет» объекта — для общей палитры в контекстной панели. */
+/** Основание под объектом (по его центру): синий холст, белый или тёмно-синий фрейм. */
+export function groundOf(it: Item, items: ItemMap = getState().items) {
+  return groundAt(items, it.x + it.w / 2, it.y + it.h / 2, it.id);
+}
+
 export function colorPatch(it: Item, color: string): ItemPatch | null {
   switch (it.type) {
     case 'sticky':
       return color === 'transparent' ? null : { color };
-    case 'shape':
-      return { fill: color };
+    case 'shape': {
+      // заливка меняется вместе с парным цветом текста и рамкой, если край иначе не читается;
+      // обводку, которую пользователь настроил сам, не трогаем
+      const style = shapeStyle(color, groundOf(it));
+      const autoEdge = it.strokeWidth === 0 || (it.strokeWidth === 2 && (it.stroke === BRAND.white || it.stroke === BRAND.blue700));
+      return autoEdge ? style : { fill: style.fill, textColor: style.textColor };
+    }
     case 'text':
       return color === 'transparent' ? null : { color };
     case 'frame':
-      return { fill: color === 'transparent' ? '#ffffff' : color };
+      return { fill: color === 'transparent' ? BRAND.white : color };
     case 'path':
     case 'connector':
       return color === 'transparent' ? null : { stroke: color };
@@ -151,18 +162,29 @@ export function createSticky(center: Pt, text = ''): string {
   return id;
 }
 
+/** Текст: белый на синем холсте и тёмно-синем фрейме, чёрный — на белой карточке. */
 export function createText(at: Pt, text = ''): string {
   const id = uid();
-  const it = makeText(id, Math.round(at.x), Math.round(at.y - 16), nextZ(), text);
+  const ground = groundAt(getState().items, at.x, at.y);
+  const it = makeText(id, Math.round(at.x), Math.round(at.y - 16), nextZ(), text, {
+    color: ground === 'card' ? BRAND.ink : BRAND.white,
+  });
   it.h = textBlockHeight(text, it.fontSize, it.w, it.bold);
   addItems([it]);
   return id;
 }
 
+/** Фигура: белая на синем, тёмно-синяя — на белом фрейме (там белая была бы не видна). */
 export function createShape(kind: ShapeKind, x: number, y: number, w: number, h: number): string {
   const id = uid();
-  addItems([makeShape(id, kind, x, y, w, h, nextZ())]);
+  const ground = groundAt(getState().items, x + w / 2, y + h / 2);
+  addItems([makeShape(id, kind, x, y, w, h, nextZ(), shapeStyle(defaultShapeFill(ground), ground))]);
   return id;
+}
+
+/** Цвет линии (коннектора), начатой в точке: белый пунктир на синем, тёмно-синий — на белой карточке. */
+export function lineColorAt(p: Pt): string {
+  return inkOn(groundAt(getState().items, p.x, p.y));
 }
 
 export function createFrame(x: number, y: number, w: number, h: number): string {
@@ -366,7 +388,10 @@ export function pasteText(text: string, point?: Pt): boolean {
   try {
     const data = JSON.parse(text);
     if (data && (data.kind === CLIP_KIND || data.kind === 'sheebase/board') && Array.isArray(data.items)) {
-      const items = (data.items as unknown[]).map(sanitizeItem).filter((x): x is Item => !!x);
+      const items = (data.items as unknown[])
+        .map(sanitizeItem)
+        .filter((x): x is Item => !!x)
+        .map(migrateLegacyItem);
       if (!items.length) return false;
       const temp: ItemMap = Object.fromEntries(items.map((i) => [i.id, i]));
       const b = boundsOf(Object.keys(temp), temp)!;
@@ -512,7 +537,7 @@ export function showPresentedFrame() {
   if (!presenting) return;
   const order = frameOrder(items);
   const f = items[order[presenting.index]];
-  if (f) board.fitRect({ x: f.x, y: f.y, w: f.w, h: f.h }, 4, 32);
+  if (f) board.fitRect({ x: f.x, y: f.y, w: f.w, h: f.h }, 4, { left: 32, top: 56, right: 32, bottom: 104 });
 }
 
 export function presentationGo(to: number) {
@@ -681,6 +706,7 @@ export function quickCreate(srcId: string, side: Side) {
     { itemId: src.id, side: 'auto', x: src.x, y: src.y },
     { itemId: id, side: 'auto', x, y },
     z + 1,
+    { stroke: lineColorAt({ x: src.x + src.w / 2, y: src.y + src.h / 2 }) },
   );
   board.begin();
   board.apply([

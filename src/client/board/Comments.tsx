@@ -1,7 +1,9 @@
-import { CircleCheck, MessageSquare, RotateCcw, Send, Trash, X } from 'lucide-react';
+import { CircleCheck, RotateCcw, Send, Trash, X } from 'lucide-react';
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import type { CommentThread } from '../../shared/types';
 import { LIMITS } from '../../shared/validate';
+import groupUrl from '../design/assets/group.png';
+import { Tag } from '../design/components';
 import { getUser } from '../user';
 import { openThread, threadPosition } from './actions';
 import { board } from './controller';
@@ -40,29 +42,28 @@ export function CommentPins({ cam }: { cam: Camera }) {
         const p = worldToScreen(cam, threadPosition(t, items));
         const first = t.messages[0];
         if (!first) return null;
+        const unread = isUnread(t, seen, me);
         return (
           <button
             type="button"
             key={t.id}
-            className={`comment-pin ${t.resolved ? 'resolved' : ''} ${openId === t.id ? 'open' : ''}`}
+            className={`comment-pin ${t.resolved ? 'resolved' : ''} ${openId === t.id ? 'open' : ''} ${unread ? 'unread' : ''}`}
             style={{ transform: `translate(${p.x}px, ${p.y}px)` }}
             data-ui="1"
             data-testid="comment-pin"
-            title={`${first.authorName}: ${first.text.slice(0, 80)}`}
+            title={`${first.authorName}: ${first.text.slice(0, 80)}${unread ? '. Есть новые сообщения' : ''}`}
+            aria-label={`Открыть обсуждение: ${first.authorName}`}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={() => openThread(t.id)}
           >
-            <span className="pin-avatar" style={{ background: first.authorColor }}>
-              {first.authorName.slice(0, 1).toUpperCase()}
-            </span>
+            {first.authorName.slice(0, 1).toUpperCase()}
             {t.messages.length > 1 && <span className="pin-count">{t.messages.length}</span>}
-            {isUnread(t, seen, me) && <span className="pin-unread" />}
           </button>
         );
       })}
       {draft && (
         <div className="comment-pin draft" style={{ transform: `translate(${worldToScreen(cam, draft).x}px, ${worldToScreen(cam, draft).y}px)` }}>
-          <span className="pin-avatar">+</span>
+          +
         </div>
       )}
     </>
@@ -92,24 +93,26 @@ function Composer({ placeholder, onSend, onCancel, testId }: { placeholder: stri
     <div className="composer">
       <textarea
         ref={ref}
+        className="field"
         value={text}
         maxLength={LIMITS.comment}
         placeholder={placeholder}
+        aria-label={placeholder}
         rows={2}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKey}
         data-testid={testId}
       />
-      <button type="button" className="icon-btn primary" disabled={!text.trim()} onClick={send} title="Отправить (Enter)" aria-label="Отправить">
-        <Send size={16} />
+      <button type="button" className="icon-btn active" disabled={!text.trim()} onClick={send} title="Отправить (Enter)" aria-label="Отправить">
+        <Send size={18} />
       </button>
     </div>
   );
 }
 
 /** Карточка рядом с пином: позиция в экранных координатах, прижата к границам окна. */
-function cardPosition(p: { x: number; y: number }, vp: { w: number; h: number }, w = 320, h = 360) {
-  return { left: Math.min(Math.max(8, p.x + 28), vp.w - w - 8), top: Math.min(Math.max(70, p.y - 40), vp.h - h - 8) };
+function cardPosition(p: { x: number; y: number }, vp: { w: number; h: number }, w = 340, h = 380) {
+  return { left: Math.min(Math.max(16, p.x + 30), vp.w - w - 16), top: Math.min(Math.max(88, p.y - 40), Math.max(88, vp.h - h - 16)) };
 }
 
 export function ThreadCard() {
@@ -129,46 +132,44 @@ export function ThreadCard() {
   return (
     <div className="thread-card panel" style={pos} data-ui onPointerDown={(e) => e.stopPropagation()} data-testid="thread-card">
       <div className="thread-head">
-        <MessageSquare size={16} />
-        <span className="thread-title">{t.resolved ? 'Решено' : 'Обсуждение'}</span>
+        <span className="thread-title">Обсуждение</span>
+        {t.resolved && <Tag tone="low">РЕШЕНО</Tag>}
+        <span className="spacer" />
         <button
           type="button"
-          className="icon-btn small"
-          title={t.resolved ? 'Открыть снова' : 'Отметить как решённое'}
+          className="icon-btn"
+          title={t.resolved ? 'Открыть снова' : 'Отметить решённым'}
+          aria-label={t.resolved ? 'Открыть снова' : 'Отметить решённым'}
           onClick={() => board.comment({ action: 'resolve', threadId: t.id, resolved: !t.resolved })}
           data-testid="thread-resolve"
         >
-          {t.resolved ? <RotateCcw size={16} /> : <CircleCheck size={16} />}
+          {t.resolved ? <RotateCcw size={18} /> : <CircleCheck size={18} />}
         </button>
         <button
           type="button"
-          className="icon-btn small"
+          className="icon-btn"
           title="Удалить обсуждение"
+          aria-label="Удалить обсуждение"
           onClick={() => window.confirm('Удалить обсуждение целиком?') && board.comment({ action: 'delete', threadId: t.id })}
         >
-          <Trash size={16} />
+          <Trash size={18} />
         </button>
-        <button type="button" className="icon-btn small" title="Закрыть (Esc)" onClick={close}>
-          <X size={16} />
+        <button type="button" className="icon-btn" title="Закрыть (Esc)" aria-label="Закрыть" onClick={close}>
+          <X size={18} />
         </button>
       </div>
       <div className="thread-messages" ref={listRef}>
         {t.messages.map((m) => (
           <div key={m.id} className="thread-message">
-            <span className="avatar small" style={{ background: m.authorColor }}>
+            <span className="avatar small" style={{ background: m.authorColor }} aria-hidden>
               {m.authorName.slice(0, 1).toUpperCase()}
             </span>
             <div className="message-body">
               <div className="message-meta">
                 <b>{m.authorName}</b> <span>{timeAgo(m.createdAt)}</span>
                 {m.authorId === me && (
-                  <button
-                    type="button"
-                    className="link-btn"
-                    title="Удалить сообщение"
-                    onClick={() => board.comment({ action: 'deleteMessage', threadId: t.id, messageId: m.id })}
-                  >
-                    удалить
+                  <button type="button" className="link-btn" onClick={() => board.comment({ action: 'deleteMessage', threadId: t.id, messageId: m.id })}>
+                    Удалить
                   </button>
                 )}
               </div>
@@ -177,7 +178,7 @@ export function ThreadCard() {
           </div>
         ))}
       </div>
-      <Composer placeholder="Ответить…" onSend={(text) => board.comment({ action: 'reply', threadId: t.id, text })} onCancel={close} testId="thread-reply" />
+      <Composer placeholder="Ответить" onSend={(text) => board.comment({ action: 'reply', threadId: t.id, text })} onCancel={close} testId="thread-reply" />
     </div>
   );
 }
@@ -187,19 +188,19 @@ export function CommentDraft() {
   const cam = useBoard((s) => s.camera);
   const vp = useBoard((s) => s.viewport);
   if (!draft) return null;
-  const pos = cardPosition(worldToScreen(cam, draft), vp, 320, 140);
+  const pos = cardPosition(worldToScreen(cam, draft), vp, 340, 170);
   const cancel = () => setState({ commentDraft: null });
   return (
     <div className="thread-card panel draft" style={pos} data-ui onPointerDown={(e) => e.stopPropagation()}>
       <div className="thread-head">
-        <MessageSquare size={16} />
         <span className="thread-title">Новый комментарий</span>
-        <button type="button" className="icon-btn small" title="Отмена (Esc)" onClick={cancel}>
-          <X size={16} />
+        <span className="spacer" />
+        <button type="button" className="icon-btn" title="Отменить (Esc)" aria-label="Отменить" onClick={cancel}>
+          <X size={18} />
         </button>
       </div>
       <Composer
-        placeholder="Напишите комментарий…"
+        placeholder="Написать комментарий"
         onSend={(text) => {
           board.comment({ action: 'create', x: draft.x, y: draft.y, itemId: draft.itemId, text });
           setState({ commentDraft: null });
@@ -221,48 +222,56 @@ export function CommentsPanel() {
   const resolved = all.filter((t) => t.resolved);
   const list = tab === 'open' ? open : resolved;
   return (
-    <div className="side-panel panel" data-ui data-testid="comments-panel">
+    <div className="page-panel" data-ui data-testid="comments-panel">
       <div className="side-head">
-        <h3>Комментарии</h3>
-        <button type="button" className="icon-btn small" onClick={() => setState({ panel: null })} aria-label="Закрыть">
-          <X size={16} />
+        <h2 className="subtitle">Комментарии</h2>
+        <button type="button" className="icon-btn" onClick={() => setState({ panel: null })} title="Закрыть" aria-label="Закрыть">
+          <X size={20} />
         </button>
       </div>
-      <div className="tabs">
-        <button type="button" className={tab === 'open' ? 'active' : ''} onClick={() => setTab('open')}>
-          Открытые ({open.length})
+      <div className="tabs" role="tablist">
+        <button type="button" role="tab" aria-selected={tab === 'open'} className={`chip ${tab === 'open' ? 'primary' : ''}`} onClick={() => setTab('open')}>
+          Открытые: {open.length}
         </button>
         <button
           type="button"
-          className={tab === 'resolved' ? 'active' : ''}
+          role="tab"
+          aria-selected={tab === 'resolved'}
+          className={`chip ${tab === 'resolved' ? 'primary' : ''}`}
           onClick={() => {
             setTab('resolved');
             setState({ showResolved: true });
           }}
         >
-          Решённые ({resolved.length})
+          Решённые: {resolved.length}
         </button>
       </div>
       <div className="side-list">
         {list.length === 0 && (
-          <div className="empty small">
-            {tab === 'open' ? 'Открытых обсуждений нет. Инструмент «Комментарий» (C): клик по доске или объекту.' : 'Решённых обсуждений нет.'}
+          <div className="panel-empty">
+            <img src={groupUrl} alt="" width={120} height={120} />
+            <p>{tab === 'open' ? 'Здесь пока пусто. Добавьте первый комментарий.' : 'Здесь пока пусто. Решённые обсуждения появятся тут.'}</p>
           </div>
         )}
         {list.map((t) => {
           const first = t.messages[0];
+          const replies = t.messages.length - 1;
           return (
             <button type="button" key={t.id} className="side-item" onClick={() => openThread(t.id, true)}>
-              <span className="avatar small" style={{ background: first.authorColor }}>
+              <span className="avatar small" style={{ background: first.authorColor }} aria-hidden>
                 {first.authorName.slice(0, 1).toUpperCase()}
               </span>
               <div className="side-item-body">
                 <div className="message-meta">
                   <b>{first.authorName}</b> <span>{timeAgo(t.updatedAt)}</span>
-                  {isUnread(t, seen, me) && <span className="dot-unread" title="Есть новые сообщения" />}
+                  {isUnread(t, seen, me) && <Tag tone="medium">НОВОЕ</Tag>}
                 </div>
                 <div className="clamp-2">{first.text}</div>
-                {t.messages.length > 1 && <div className="muted small-text">Ответов: {t.messages.length - 1}</div>}
+                {replies > 0 && (
+                  <div className="meta-line">
+                    {replies} {replies % 10 === 1 && replies % 100 !== 11 ? 'ответ' : replies % 10 >= 2 && replies % 10 <= 4 && (replies % 100 < 12 || replies % 100 > 14) ? 'ответа' : 'ответов'}
+                  </div>
+                )}
               </div>
             </button>
           );

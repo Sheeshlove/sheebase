@@ -23,6 +23,7 @@ import {
   createText,
   expandGroups,
   insertImageFile,
+  lineColorAt,
   type MoveSet,
   moveOps,
   nextZ,
@@ -359,8 +360,11 @@ export class Interactions {
           if (!far(m.sx, m.sy)) return;
           board.begin();
           const id = uid();
+          const origin = m.sourceId && st.items[m.sourceId] ? st.items[m.sourceId] : null;
+          const from = origin ? { x: origin.x + origin.w / 2, y: origin.y + origin.h / 2 } : { x: m.source.x, y: m.source.y };
           const conn = makeConnector(id, m.source, { x: r2(w.x), y: r2(w.y), itemId: null, side: null }, nextZ(), {
             lineStyle: st.connectorStyle,
+            stroke: lineColorAt(from),
           });
           board.apply([{ t: 'add', item: conn }]);
           m.id = id;

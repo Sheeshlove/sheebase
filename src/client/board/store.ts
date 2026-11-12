@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { STICKY_COLORS } from '../../shared/defaults';
+import { BRAND, STICKY_TONES } from '../../shared/brand';
 import type { Pt, Rect } from '../../shared/geometry';
 import type {
   BoardMeta,
@@ -103,6 +103,12 @@ export interface BoardState {
   seen: Record<string, number>;
   showAuthors: boolean;
   showResolved: boolean;
+  /** Точечная сетка на холсте (настройка вида). */
+  showGrid: boolean;
+  /** Боковая панель со списком досок. */
+  sidebarOpen: boolean;
+  /** Меняется, когда догрузились шрифты: текст объектов перекладывается заново. */
+  fontEpoch: number;
 }
 
 export const MIN_ZOOM = 0.1;
@@ -121,8 +127,8 @@ export function initialBoardState(): BoardState {
     editingId: null,
     tool: 'select',
     shapeKind: 'rect',
-    stickyColor: STICKY_COLORS[0].value,
-    penColor: '#1e1e1e',
+    stickyColor: STICKY_TONES[0].value,
+    penColor: BRAND.white,
     penWidth: 4,
     connectorStyle: 'curved',
     camera: { x: 0, y: 0, zoom: 1 },
@@ -154,6 +160,9 @@ export function initialBoardState(): BoardState {
     seen: {},
     showAuthors: readPref('showAuthors', false),
     showResolved: false,
+    showGrid: readPref('showGrid', true),
+    sidebarOpen: readPref('sidebarOpen', false),
+    fontEpoch: 0,
   };
 }
 

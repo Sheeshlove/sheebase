@@ -32,12 +32,12 @@ import { exportPng } from './exporter';
 import { getState, setState, useBoard } from './store';
 
 export const ALIGN_BUTTONS: { mode: AlignMode; title: string; icon: ReactNode }[] = [
-  { mode: 'left', title: 'По левому краю (Alt+A)', icon: <AlignStartVertical size={16} /> },
-  { mode: 'hcenter', title: 'По центру по горизонтали (Alt+H)', icon: <AlignCenterVertical size={16} /> },
-  { mode: 'right', title: 'По правому краю (Alt+D)', icon: <AlignEndVertical size={16} /> },
-  { mode: 'top', title: 'По верхнему краю (Alt+W)', icon: <AlignStartHorizontal size={16} /> },
-  { mode: 'vmiddle', title: 'По середине по вертикали (Alt+V)', icon: <AlignCenterHorizontal size={16} /> },
-  { mode: 'bottom', title: 'По нижнему краю (Alt+S)', icon: <AlignEndHorizontal size={16} /> },
+  { mode: 'left', title: 'Выровнять по левому краю (Alt+A)', icon: <AlignStartVertical size={18} /> },
+  { mode: 'hcenter', title: 'Выровнять по центру (Alt+H)', icon: <AlignCenterVertical size={18} /> },
+  { mode: 'right', title: 'Выровнять по правому краю (Alt+D)', icon: <AlignEndVertical size={18} /> },
+  { mode: 'top', title: 'Выровнять по верхнему краю (Alt+W)', icon: <AlignStartHorizontal size={18} /> },
+  { mode: 'vmiddle', title: 'Выровнять по середине (Alt+V)', icon: <AlignCenterHorizontal size={18} /> },
+  { mode: 'bottom', title: 'Выровнять по нижнему краю (Alt+S)', icon: <AlignEndHorizontal size={18} /> },
 ];
 
 /** Кнопки выравнивания и распределения (контекстное меню и контекстная панель). */
@@ -48,7 +48,7 @@ export function AlignButtons({ count, onDone }: { count: number; onDone?: () => 
         <button
           key={b.mode}
           type="button"
-          className="icon-btn small"
+          className="icon-btn"
           title={b.title}
           aria-label={b.title}
           data-testid={`align-${b.mode}`}
@@ -62,27 +62,29 @@ export function AlignButtons({ count, onDone }: { count: number; onDone?: () => 
       ))}
       <button
         type="button"
-        className="icon-btn small"
+        className="icon-btn"
         disabled={count < 3}
         title="Распределить по горизонтали (Alt+Shift+H)"
+        aria-label="Распределить по горизонтали"
         onClick={() => {
           distributeSelection('x');
           onDone?.();
         }}
       >
-        <AlignHorizontalDistributeCenter size={16} />
+        <AlignHorizontalDistributeCenter size={18} />
       </button>
       <button
         type="button"
-        className="icon-btn small"
+        className="icon-btn"
         disabled={count < 3}
         title="Распределить по вертикали (Alt+Shift+V)"
+        aria-label="Распределить по вертикали"
         onClick={() => {
           distributeSelection('y');
           onDone?.();
         }}
       >
-        <AlignVerticalDistributeCenter size={16} />
+        <AlignVerticalDistributeCenter size={18} />
       </button>
     </div>
   );
@@ -90,7 +92,7 @@ export function AlignButtons({ count, onDone }: { count: number; onDone?: () => 
 
 function Item({ label, hint, onClick, danger, disabled }: { label: string; hint?: string; onClick: () => void; danger?: boolean; disabled?: boolean }) {
   return (
-    <button type="button" className={`menu-item ${danger ? 'danger' : ''}`} onClick={onClick} disabled={disabled}>
+    <button type="button" role="menuitem" className={`list-item menu-item ${danger ? 'danger' : ''}`} onClick={onClick} disabled={disabled}>
       <span>{label}</span>
       {hint && <kbd>{hint}</kbd>}
     </button>
@@ -128,10 +130,10 @@ export function ContextMenu() {
   const allLocked = sel.length > 0 && sel.every((i) => i.locked);
   const grouped = sel.some((i) => i.groupId);
   const unlocked = sel.filter((i) => !i.locked && i.type !== 'connector').length;
-  const style = { left: Math.min(menu.x, viewport.w - 250), top: Math.min(menu.y, Math.max(70, viewport.h - (onSelection ? 470 : 230))) };
+  const style = { left: Math.min(menu.x, viewport.w - 290), top: Math.min(menu.y, Math.max(88, viewport.h - (onSelection ? 640 : 330))) };
 
   return (
-    <div className="context-menu panel" style={style} data-ui data-testid="context-menu" onContextMenu={(e) => e.preventDefault()}>
+    <div className="context-menu panel" role="menu" style={style} data-ui data-testid="context-menu" onContextMenu={(e) => e.preventDefault()}>
       {onSelection ? (
         <>
           <Item label="Копировать" hint="Ctrl+C" onClick={act(() => copySelectionToClipboard())} />
@@ -139,15 +141,15 @@ export function ContextMenu() {
           <Item label="Вставить" hint="Ctrl+V" onClick={act(() => void pasteFromClipboard(menu.world))} />
           <Item label="Дублировать" hint="Ctrl+D" onClick={act(duplicateSelection)} />
           <div className="menu-sep" />
-          <Item label="На передний план" hint="PgUp" onClick={act(bringToFront)} />
-          <Item label="На задний план" hint="PgDn" onClick={act(sendToBack)} />
+          <Item label="Поднять наверх" hint="PgUp" onClick={act(bringToFront)} />
+          <Item label="Опустить вниз" hint="PgDn" onClick={act(sendToBack)} />
           {sel.length > 1 && !grouped && <Item label="Сгруппировать" hint="Ctrl+G" onClick={act(groupSelection)} />}
           {grouped && <Item label="Разгруппировать" hint="Ctrl+Shift+G" onClick={act(ungroupSelection)} />}
           <Item label={allLocked ? 'Разблокировать' : 'Заблокировать'} hint="Ctrl+Shift+L" onClick={act(toggleLock)} />
           {unlocked > 1 && (
             <>
               <div className="menu-sep" />
-              <div className="menu-label">Выровнять и распределить</div>
+              <div className="list-title">Выровнять и распределить</div>
               <AlignButtons count={unlocked} onDone={close} />
             </>
           )}
@@ -157,18 +159,18 @@ export function ContextMenu() {
             hint="C"
             onClick={act(() => startComment(menu.world, sel.length === 1 && sel[0].type !== 'connector' && sel[0].type !== 'path' ? sel[0].id : null))}
           />
-          <Item label="Экспорт выделения в PNG" onClick={act(() => void exportPng())} />
+          <Item label="Экспортировать в PNG" onClick={act(() => void exportPng())} />
           <div className="menu-sep" />
           <Item label="Удалить" hint="Del" danger onClick={act(deleteSelection)} disabled={allLocked} />
         </>
       ) : (
         <>
           <Item label="Вставить" hint="Ctrl+V" onClick={act(() => void pasteFromClipboard(menu.world))} />
-          <Item label="Добавить стикер здесь" onClick={act(() => createAndEdit(() => createSticky(menu.world)))} />
-          <Item label="Добавить комментарий здесь" hint="C" onClick={act(() => startComment(menu.world, null))} />
+          <Item label="Добавить стикер" onClick={act(() => createAndEdit(() => createSticky(menu.world)))} />
+          <Item label="Добавить комментарий" hint="C" onClick={act(() => startComment(menu.world, null))} />
           <div className="menu-sep" />
           <Item label="Выделить всё" hint="Ctrl+A" onClick={act(selectAll)} />
-          <Item label="Вписать всё" hint="Shift+1" onClick={act(() => board.zoomToFit())} />
+          <Item label="Показать всю доску" hint="Shift+1" onClick={act(() => board.zoomToFit())} />
           <Item label="Найти на доске" hint="Ctrl+F" onClick={act(() => setState({ search: { ...getState().search, open: true } }))} />
         </>
       )}

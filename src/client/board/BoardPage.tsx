@@ -1,5 +1,8 @@
 import { useEffect } from 'react';
 import { frameOrder } from '../../shared/layout';
+import questionUrl from '../design/assets/question.png';
+import { Button } from '../design/components';
+import { Sidebar } from '../Sidebar';
 import {
   alignSelection,
   bringToFront,
@@ -35,7 +38,7 @@ import { FramesPanel, PresentationBar, PresentationMask } from './FramesPanel';
 import { HelpDialog, Toast } from './HelpDialog';
 import { NavControls } from './NavControls';
 import { closeSearch, openSearch, SearchBar } from './SearchBar';
-import { getState, setState, type Tool, useBoard, votingActive } from './store';
+import { getState, setState, type Tool, useBoard, votingActive, writePref } from './store';
 import { Toolbar } from './Toolbar';
 import { TopBar } from './TopBar';
 import { VersionsPanel } from './VersionsPanel';
@@ -302,6 +305,8 @@ export function BoardPage({ id }: { id: string }) {
   const error = useBoard((s) => s.error);
   const name = useBoard((s) => s.meta?.name);
   const presenting = useBoard((s) => !!s.presenting);
+  const sidebarOpen = useBoard((s) => s.sidebarOpen);
+  const panelOpen = useBoard((s) => s.panel !== null);
 
   useEffect(() => {
     board.open(id);
@@ -309,7 +314,7 @@ export function BoardPage({ id }: { id: string }) {
   }, [id]);
 
   useEffect(() => {
-    document.title = name ? `${name} — Sheebase Board` : 'Sheebase Board';
+    document.title = name ? `${name} — ШИБЕЙС` : 'ШИБЕЙС';
   }, [name]);
 
   useEffect(() => {
@@ -334,51 +339,64 @@ export function BoardPage({ id }: { id: string }) {
     };
   }, []);
 
+  const closeSidebar = () => {
+    setState({ sidebarOpen: false });
+    writePref('sidebarOpen', false);
+  };
+
+  // Раскладка ШИБЕЙС — не больше трёх колонок: боковая панель (blue-700),
+  // холст (blue-500) и, когда открыта, белая панель страницы.
   return (
     <div className={`board-page ${presenting ? 'presenting' : ''}`}>
-      <Canvas />
-      {presenting ? (
-        <>
-          <PresentationMask />
-          <PresentationBar />
-        </>
-      ) : (
-        <>
-          <FollowFrame />
-          <TopBar />
-          <Toolbar />
-          <ContextToolbar />
-          {/* плашки по центру сверху — в одном столбце, чтобы не перекрывались */}
-          <div className="top-center">
-            <FollowLabel />
-            <VotingBanner />
-            <SearchBar />
+      {sidebarOpen && !presenting && <Sidebar currentId={id} currentName={name} onClose={closeSidebar} />}
+      <div className="board-stage">
+        <Canvas />
+        {presenting ? (
+          <>
+            <PresentationMask />
+            <PresentationBar />
+          </>
+        ) : (
+          <>
+            <FollowFrame />
+            <TopBar />
+            <Toolbar />
+            <ContextToolbar />
+            {/* плашки по центру сверху — в одном столбце, чтобы не перекрывались */}
+            <div className="top-center">
+              <FollowLabel />
+              <VotingBanner />
+              <SearchBar />
+            </div>
+            <NavControls />
+            <ThreadCard />
+            <CommentDraft />
+            <ContextMenu />
+          </>
+        )}
+        <Toast />
+        {!loaded && status !== 'error' && (
+          <div className="loading" data-testid="loading">
+            <p className="stat">Загрузка доски</p>
           </div>
-          <NavControls />
+        )}
+        {status === 'error' && (
+          <div className="fatal">
+            <img src={questionUrl} alt="" width={146} height={146} />
+            <h2 className="hero">{error ?? 'Не удалось открыть доску'}</h2>
+            <p className="stat">Возможно, доску удалили или ссылка неверна.</p>
+            <Button variant="inverse" onClick={() => (location.hash = '#/')}>
+              Вернуться к доскам
+            </Button>
+          </div>
+        )}
+      </div>
+      {panelOpen && !presenting && (
+        <aside className="page-panel-col">
           <SidePanel />
-          <ThreadCard />
-          <CommentDraft />
-          <ContextMenu />
-          <HelpDialog />
-        </>
+        </aside>
       )}
-      <Toast />
-      {!loaded && status !== 'error' && (
-        <div className="loading" data-testid="loading">
-          <div className="spinner" /> Загрузка доски…
-        </div>
-      )}
-      {status === 'error' && (
-        <div className="fatal">
-          <div className="panel fatal-box">
-            <h2>{error ?? 'Ошибка'}</h2>
-            <p>Возможно, доска была удалена или ссылка неверна.</p>
-            <a className="primary-btn" href="#/">
-              Ко всем доскам
-            </a>
-          </div>
-        </div>
-      )}
+      {!presenting && <HelpDialog />}
     </div>
   );
 }

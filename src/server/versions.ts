@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { migrateLegacyItem } from '../shared/brand';
 import { uid } from '../shared/ops';
 import type { ItemMap, VersionMeta } from '../shared/types';
 import { isValidId, sanitizeItem } from '../shared/validate';
@@ -80,7 +81,7 @@ export class VersionStore {
       const items: ItemMap = {};
       for (const it of Object.values(raw.items ?? {})) {
         const clean = sanitizeItem(it);
-        if (clean) items[clean.id] = clean;
+        if (clean) items[clean.id] = migrateLegacyItem(clean);
       }
       return { ...meta, items };
     } catch {

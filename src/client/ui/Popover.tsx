@@ -29,35 +29,65 @@ export function Popover({ trigger, children, placement = 'bottom', className }: 
   return (
     <div className={`popover-wrap ${className ?? ''}`} ref={ref}>
       {trigger(open, () => setOpen((o) => !o))}
-      {open && <div className={`popover popover-${placement}`}>{children(() => setOpen(false))}</div>}
+      {open && <div className={`popover deep popover-${placement}`}>{children(() => setOpen(false))}</div>}
     </div>
   );
 }
 
+type NamedColor = { name?: string; value: string };
+
+/** Образцы цвета. Название цвета — в подсказке и для экранного диктора. */
 export function Swatches({
   colors,
   value,
   onPick,
-  columns = 8,
+  columns = 5,
 }: {
-  colors: { name?: string; value: string }[] | string[];
+  colors: NamedColor[] | string[];
   value?: string | null;
   onPick: (c: string) => void;
   columns?: number;
 }) {
   const list = colors.map((c) => (typeof c === 'string' ? { value: c, name: c } : c));
   return (
-    <div className="swatches" style={{ gridTemplateColumns: `repeat(${columns}, 24px)` }}>
-      {list.map((c) => (
+    <div className="swatches" style={{ gridTemplateColumns: `repeat(${columns}, 32px)` }}>
+      {list.map((c) => {
+        const name = c.value === 'transparent' ? 'Без заливки' : (c.name ?? c.value);
+        return (
+          <button
+            key={c.value}
+            type="button"
+            className={`swatch ${c.value === 'transparent' ? 'transparent' : ''} ${value?.toLowerCase() === c.value ? 'active' : ''}`}
+            style={{ background: c.value === 'transparent' ? undefined : c.value }}
+            title={name}
+            aria-label={name}
+            aria-pressed={value?.toLowerCase() === c.value}
+            onClick={() => onPick(c.value)}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Тона со словом на заливке (стикеры: «Идея», «Готово», «Заблокировано», «Нейтрально»).
+ * По правилам системы смысл несёт слово, а не один цвет.
+ */
+export function ToneChips({ tones, value, onPick }: { tones: NamedColor[]; value?: string | null; onPick: (c: string) => void }) {
+  return (
+    <div className="tone-chips">
+      {tones.map((t) => (
         <button
-          key={c.value}
+          key={t.value}
           type="button"
-          className={`swatch ${c.value === 'transparent' ? 'transparent' : ''} ${value === c.value ? 'active' : ''}`}
-          style={{ background: c.value === 'transparent' ? undefined : c.value }}
-          title={c.name === 'transparent' ? 'Без заливки' : c.name}
-          aria-label={c.name}
-          onClick={() => onPick(c.value)}
-        />
+          className={`tone-chip ${value?.toLowerCase() === t.value ? 'active' : ''}`}
+          style={{ background: t.value }}
+          aria-pressed={value?.toLowerCase() === t.value}
+          onClick={() => onPick(t.value)}
+        >
+          {t.name}
+        </button>
       ))}
     </div>
   );

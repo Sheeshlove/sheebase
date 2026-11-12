@@ -16,11 +16,12 @@ import {
   Undo2,
 } from 'lucide-react';
 import { type ReactNode, useRef } from 'react';
-import { PALETTE, SHAPE_KINDS, STICKY_COLORS } from '../../shared/defaults';
+import { PALETTE_SOLID, STICKY_TONES } from '../../shared/brand';
+import { SHAPE_KINDS } from '../../shared/defaults';
 import { shapePath } from '../../shared/geometry';
 import type { LineStyle, ShapeKind } from '../../shared/types';
 import { TEMPLATES } from '../../shared/templates';
-import { Popover, Swatches } from '../ui/Popover';
+import { Popover, Swatches, ToneChips } from '../ui/Popover';
 import { insertImageFile, insertTemplate, redo, setTool, undo } from './actions';
 import { getState, setState, type Tool, useBoard, votingActive } from './store';
 
@@ -85,16 +86,16 @@ function ToolOptions() {
 
   if (tool === 'sticky') {
     return (
-      <div className="tool-options" data-ui>
-        <div className="tool-options-title">Цвет стикера</div>
-        <Swatches colors={STICKY_COLORS} value={stickyColor} onPick={(c) => setState({ stickyColor: c })} columns={5} />
-        <div className="hint">Кликните на холст, чтобы поставить стикер</div>
+      <div className="tool-options panel" data-ui>
+        <div className="tool-options-title">Тон стикера</div>
+        <ToneChips tones={STICKY_TONES} value={stickyColor} onPick={(c) => setState({ stickyColor: c })} />
+        <div className="hint">Нажмите на доску, чтобы добавить стикер</div>
       </div>
     );
   }
   if (tool === 'shape') {
     return (
-      <div className="tool-options" data-ui>
+      <div className="tool-options panel" data-ui>
         <div className="tool-options-title">Фигура</div>
         <div className="icon-grid">
           {SHAPE_KINDS.map((s) => (
@@ -109,15 +110,15 @@ function ToolOptions() {
             </button>
           ))}
         </div>
-        <div className="hint">Кликните или протяните на холсте. Shift — пропорционально</div>
+        <div className="hint">Нажмите или протяните на доске. Shift сохраняет пропорции</div>
       </div>
     );
   }
   if (tool === 'pen') {
     return (
-      <div className="tool-options" data-ui>
+      <div className="tool-options panel" data-ui>
         <div className="tool-options-title">Цвет и толщина</div>
-        <Swatches colors={PALETTE.filter((c) => c !== 'transparent' && c !== '#ffffff')} value={penColor} onPick={(c) => setState({ penColor: c })} columns={7} />
+        <Swatches colors={PALETTE_SOLID} value={penColor} onPick={(c) => setState({ penColor: c })} columns={5} />
         <div className="width-row">
           {[2, 4, 8, 14].map((w) => (
             <button key={w} type="button" className={`icon-btn ${penWidth === w ? 'active' : ''}`} onClick={() => setState({ penWidth: w })} title={`${w} px`}>
@@ -130,8 +131,8 @@ function ToolOptions() {
   }
   if (tool === 'connector') {
     return (
-      <div className="tool-options" data-ui>
-        <div className="tool-options-title">Тип линии</div>
+      <div className="tool-options panel" data-ui>
+        <div className="tool-options-title">Линия</div>
         <div className="icon-grid">
           {LINE_STYLES.map((l) => (
             <button
@@ -145,7 +146,7 @@ function ToolOptions() {
             </button>
           ))}
         </div>
-        <div className="hint">Протяните от объекта к объекту</div>
+        <div className="hint">Протяните линию от объекта к объекту</div>
       </div>
     );
   }
@@ -170,7 +171,7 @@ export function Toolbar() {
         <ToolButton tool="eraser" icon={<Eraser size={20} />} label="Ластик" hotkey="E" />
         <ToolButton tool="frame" icon={<Frame size={20} />} label="Фрейм" hotkey="F" />
         <ToolButton tool="comment" icon={<MessageSquarePlus size={20} />} label="Комментарий" hotkey="C" />
-        <button type="button" className="tool-btn" title="Изображение" aria-label="Изображение" onClick={() => fileRef.current?.click()}>
+        <button type="button" className="tool-btn" title="Добавить изображение" aria-label="Добавить изображение" onClick={() => fileRef.current?.click()}>
           <ImagePlus size={20} />
         </button>
         <Popover
@@ -190,22 +191,20 @@ export function Toolbar() {
         >
           {(close) => (
             <div className="list">
-              <div className="list-title">Вставить шаблон в центр экрана</div>
+              <div className="list-title">Вставить шаблон</div>
               {TEMPLATES.filter((t) => t.id !== 'blank').map((t) => (
                 <button
                   key={t.id}
                   type="button"
                   className="list-item"
+                  title={t.description}
                   data-testid={`insert-template-${t.id}`}
                   onClick={() => {
                     close();
                     insertTemplate(t.id);
                   }}
                 >
-                  <div>
-                    <div>{t.name}</div>
-                    <div className="muted small-text">{t.description}</div>
-                  </div>
+                  {t.name}
                 </button>
               ))}
             </div>
@@ -214,8 +213,8 @@ export function Toolbar() {
         <button
           type="button"
           className="tool-btn"
-          title="Фреймы и презентация"
-          aria-label="Фреймы и презентация"
+          title="Показать фреймы"
+          aria-label="Показать фреймы"
           onClick={() => setState({ panel: getState().panel === 'frames' ? null : 'frames' })}
           data-testid="frames-button"
         >
@@ -233,7 +232,7 @@ export function Toolbar() {
           }}
         />
       </div>
-      <div className="toolbar panel" data-ui>
+      <div className="toolbar history panel" data-ui>
         <button type="button" className="tool-btn" disabled={!canUndo} onClick={undo} title="Отменить (Ctrl+Z)" aria-label="Отменить">
           <Undo2 size={20} />
         </button>

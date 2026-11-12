@@ -17,10 +17,11 @@ import {
 } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { PALETTE, SHAPE_KINDS, STICKY_COLORS } from '../../shared/defaults';
+import { FRAME_FILLS, PALETTE, PALETTE_SOLID, STICKY_TONES } from '../../shared/brand';
+import { SHAPE_KINDS } from '../../shared/defaults';
 import { boundsOf } from '../../shared/geometry';
 import type { Item, ItemPatch, LineStyle, ShapeKind } from '../../shared/types';
-import { Popover, Swatches } from '../ui/Popover';
+import { Popover, Swatches, ToneChips } from '../ui/Popover';
 import {
   bringToFront,
   colorPatch,
@@ -63,7 +64,24 @@ function Btn({
   );
 }
 
-function ColorButton({ value, title, colors, onPick, testId }: { value: string | null; title: string; colors: { name?: string; value: string }[] | string[]; onPick: (c: string) => void; testId?: string }) {
+type NamedColor = { name: string; value: string };
+
+/** Выбор цвета из палитры системы. `tones` — тона стикеров: слово на заливке вместо голого цвета. */
+function ColorButton({
+  value,
+  title,
+  colors,
+  tones,
+  onPick,
+  testId,
+}: {
+  value: string | null;
+  title: string;
+  colors: NamedColor[];
+  tones?: boolean;
+  onPick: (c: string) => void;
+  testId?: string;
+}) {
   return (
     <Popover
       trigger={(_open, toggle) => (
@@ -72,17 +90,13 @@ function ColorButton({ value, title, colors, onPick, testId }: { value: string |
         </button>
       )}
     >
-      {(close) => (
-        <Swatches
-          colors={colors}
-          value={value}
-          columns={colors.length > 10 ? 8 : 5}
-          onPick={(c) => {
-            onPick(c);
-            close();
-          }}
-        />
-      )}
+      {(close) => {
+        const pick = (c: string) => {
+          onPick(c);
+          close();
+        };
+        return tones ? <ToneChips tones={colors} value={value} onPick={pick} /> : <Swatches colors={colors} value={value} columns={5} onPick={pick} />;
+      }}
     </Popover>
   );
 }
@@ -94,7 +108,7 @@ function FontSize({ value, onChange }: { value: number; onChange: (v: number) =>
     onChange(next);
   };
   return (
-    <div className="font-size" title="Размер шрифта">
+    <div className="font-size" title="Размер текста">
       <button type="button" className="ctx-btn small" onClick={() => step(-1)} aria-label="Уменьшить шрифт">
         −
       </button>
@@ -110,7 +124,7 @@ function StrokeWidth({ value, onChange }: { value: number; onChange: (v: number)
   return (
     <Popover
       trigger={(_o, toggle) => (
-        <button type="button" className="ctx-btn" title="Толщина линии" onClick={toggle}>
+        <button type="button" className="ctx-btn" title="Выбрать толщину линии" aria-label="Выбрать толщину линии" onClick={toggle}>
           <span className="stroke-preview" style={{ height: Math.max(1, Math.min(value, 8)) }} />
         </button>
       )}
@@ -127,7 +141,7 @@ function StrokeWidth({ value, onChange }: { value: number; onChange: (v: number)
                 close();
               }}
             >
-              <span className="stroke-preview" style={{ height: w }} /> {w}px
+              <span className="stroke-preview" style={{ height: w }} /> {w} px
             </button>
           ))}
         </div>
@@ -146,8 +160,8 @@ function LinkEditor({ id, value }: { id: string; value: string | null | undefine
         <button
           type="button"
           className={`ctx-btn ${value ? 'active' : ''}`}
-          title={value ? `Ссылка: ${value}` : 'Добавить ссылку'}
-          aria-label="Ссылка"
+          title={value ? `Изменить ссылку: ${value}` : 'Добавить ссылку'}
+          aria-label="Добавить ссылку"
           onClick={() => {
             setText(value ?? '');
             toggle();
@@ -163,7 +177,7 @@ function LinkEditor({ id, value }: { id: string; value: string | null | undefine
           className="link-form"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!setLink(id, text)) return showToast('Нужен адрес вида https://…');
+            if (!setLink(id, text)) return showToast('Введите адрес вида https://example.com');
             close();
           }}
         >
@@ -175,7 +189,7 @@ function LinkEditor({ id, value }: { id: string; value: string | null | undefine
             onKeyDown={(e) => e.stopPropagation()}
             data-testid="link-input"
           />
-          <button type="submit" className="primary-btn small">
+          <button type="submit" className="chip primary">
             Сохранить
           </button>
           {value && (
@@ -227,7 +241,8 @@ export function ContextToolbar() {
   const first = sel[0];
   const allLocked = sel.every((i) => i.locked);
   const set = (patch: ItemPatch) => updateSelected(() => patch);
-  const colors = one === 'sticky' ? STICKY_COLORS : one === 'shape' || one === 'frame' ? PALETTE : PALETTE.filter((c) => c !== 'transparent');
+  // палитра по типу: тона стикеров, заливки фреймов, для фигур — вся палитра с «без заливки»
+  const colors: NamedColor[] = one === 'sticky' ? STICKY_TONES : one === 'frame' ? FRAME_FILLS : one === 'shape' ? PALETTE : PALETTE_SOLID;
   const hasColor = sel.some((i) => primaryColor(i) !== null);
   const grouped = sel.some((i) => i.groupId);
 
@@ -253,7 +268,7 @@ export function ContextToolbar() {
             <>
               <Popover
                 trigger={(_o, toggle) => (
-                  <button type="button" className="ctx-btn" title="Тип фигуры" onClick={toggle}>
+                  <button type="button" className="ctx-btn" title="Сменить фигуру" aria-label="Сменить фигуру" onClick={toggle}>
                     <ShapeIcon kind={first.shape} />
                   </button>
                 )}
@@ -283,9 +298,10 @@ export function ContextToolbar() {
 
           {hasColor && (
             <ColorButton
-              title={one === 'shape' ? 'Заливка' : 'Цвет'}
+              title={one === 'sticky' ? 'Выбрать тон' : one === 'shape' || one === 'frame' ? 'Выбрать заливку' : 'Выбрать цвет'}
               value={primaryColor(first)}
               colors={colors}
+              tones={one === 'sticky'}
               onPick={(c) => updateSelected((it) => colorPatch(it, c))}
               testId="ctx-color"
             />
@@ -293,11 +309,16 @@ export function ContextToolbar() {
 
           {one === 'shape' && first.type === 'shape' && (
             <>
-              <ColorButton title="Цвет обводки" value={first.stroke} colors={PALETTE.filter((c) => c !== 'transparent')} onPick={(c) => set({ stroke: c })} />
+              <ColorButton
+                title="Выбрать цвет обводки"
+                value={first.strokeWidth > 0 ? first.stroke : null}
+                colors={PALETTE_SOLID}
+                onPick={(c) => set({ stroke: c, strokeWidth: first.strokeWidth || 2 })}
+              />
               <StrokeWidth value={first.strokeWidth} onChange={(v) => set({ strokeWidth: v })} />
               {sep}
               <FontSize value={first.fontSize} onChange={(v) => set({ fontSize: v })} />
-              <ColorButton title="Цвет текста" value={first.textColor} colors={PALETTE.filter((c) => c !== 'transparent')} onPick={(c) => set({ textColor: c })} />
+              <ColorButton title="Выбрать цвет текста" value={first.textColor} colors={PALETTE_SOLID} onPick={(c) => set({ textColor: c })} />
             </>
           )}
 
@@ -305,16 +326,16 @@ export function ContextToolbar() {
             <>
               {sep}
               <FontSize value={first.fontSize} onChange={(v) => set({ fontSize: v })} />
-              <Btn title="Жирный" active={first.bold} onClick={() => set({ bold: !first.bold })}>
-                <b>B</b>
+              <Btn title="Сделать жирным" active={first.bold} onClick={() => set({ bold: !first.bold })}>
+                <b>Ж</b>
               </Btn>
-              <Btn title="По левому краю" active={first.align === 'left'} onClick={() => set({ align: 'left' })}>
+              <Btn title="Выровнять по левому краю" active={first.align === 'left'} onClick={() => set({ align: 'left' })}>
                 <TextAlignStart size={18} />
               </Btn>
-              <Btn title="По центру" active={first.align === 'center'} onClick={() => set({ align: 'center' })}>
+              <Btn title="Выровнять по центру" active={first.align === 'center'} onClick={() => set({ align: 'center' })}>
                 <TextAlignCenter size={18} />
               </Btn>
-              <Btn title="По правому краю" active={first.align === 'right'} onClick={() => set({ align: 'right' })}>
+              <Btn title="Выровнять по правому краю" active={first.align === 'right'} onClick={() => set({ align: 'right' })}>
                 <TextAlignEnd size={18} />
               </Btn>
             </>
@@ -330,10 +351,10 @@ export function ContextToolbar() {
                 </Btn>
               ))}
               {sep}
-              <Btn title="Стрелка в начале" active={first.startArrow === 'arrow'} onClick={() => set({ startArrow: first.startArrow === 'arrow' ? 'none' : 'arrow' })}>
+              <Btn title="Показать стрелку в начале" active={first.startArrow === 'arrow'} onClick={() => set({ startArrow: first.startArrow === 'arrow' ? 'none' : 'arrow' })}>
                 <ArrowLeft size={18} />
               </Btn>
-              <Btn title="Стрелка в конце" active={first.endArrow === 'arrow'} onClick={() => set({ endArrow: first.endArrow === 'arrow' ? 'none' : 'arrow' })}>
+              <Btn title="Показать стрелку в конце" active={first.endArrow === 'arrow'} onClick={() => set({ endArrow: first.endArrow === 'arrow' ? 'none' : 'arrow' })}>
                 <ArrowRight size={18} />
               </Btn>
             </>
@@ -346,7 +367,7 @@ export function ContextToolbar() {
               {sep}
               <Popover
                 trigger={(_o, toggle) => (
-                  <button type="button" className="ctx-btn" title="Выровнять и распределить" onClick={toggle} data-testid="ctx-align">
+                  <button type="button" className="ctx-btn" title="Выровнять и распределить" aria-label="Выровнять и распределить" onClick={toggle} data-testid="ctx-align">
                     <AlignCenterVertical size={18} />
                   </button>
                 )}
@@ -365,10 +386,10 @@ export function ContextToolbar() {
           <Btn title="Дублировать (Ctrl+D)" onClick={duplicateSelection}>
             <Copy size={18} />
           </Btn>
-          <Btn title="На передний план (PageUp)" onClick={bringToFront}>
+          <Btn title="Поднять наверх (PageUp)" onClick={bringToFront}>
             <BringToFront size={18} />
           </Btn>
-          <Btn title="На задний план (PageDown)" onClick={sendToBack}>
+          <Btn title="Опустить вниз (PageDown)" onClick={sendToBack}>
             <SendToBack size={18} />
           </Btn>
           {sel.length > 1 && !grouped && (

@@ -31,6 +31,9 @@ function handlePos(r: Rect, h: Handle) {
   return { x, y };
 }
 
+/** Рамка вокруг прямоугольника с отступом наружу. */
+const grow = (r: Rect, d: number): Rect => ({ x: r.x - d, y: r.y - d, w: r.w + d * 2, h: r.h + d * 2 });
+
 function Box({ r, className, color }: { r: Rect; className: string; color?: string }) {
   return (
     <div
@@ -78,8 +81,9 @@ function PeerLayer({ cam }: { cam: Camera }) {
         if (!it) return null;
         const r = worldRectToScreen(cam, itemBounds(it, items));
         return (
-          <div key={`edit-${p.clientId}`} className="peer-tag editing" style={{ transform: `translate(${r.x}px, ${r.y + r.h + 4}px)`, background: p.color }}>
-            ✎ {p.name}
+          <div key={`edit-${p.clientId}`} className="peer-tag editing" style={{ transform: `translate(${r.x}px, ${r.y + r.h + 6}px)` }}>
+            <i style={{ background: p.color }} />
+            Редактирует: {p.name}
           </div>
         );
       })}
@@ -92,7 +96,8 @@ function PeerLayer({ cam }: { cam: Camera }) {
             <div key={`${p.clientId}-${id}`}>
               <Box r={{ x: r.x - 3, y: r.y - 3, w: r.w + 6, h: r.h + 6 }} className="peer-selection" color={p.color} />
               {i === 0 && (
-                <div className="peer-tag" style={{ transform: `translate(${r.x - 3}px, ${r.y - 22}px)`, background: p.color }}>
+                <div className="peer-tag" style={{ transform: `translate(${r.x - 3}px, ${r.y - 30}px)` }}>
+                  <i style={{ background: p.color }} />
                   {p.name}
                 </div>
               )}
@@ -108,7 +113,7 @@ function PeerLayer({ cam }: { cam: Camera }) {
             <svg width="18" height="22" viewBox="0 0 18 22">
               <path d="M1 1 L1 17 L5.5 13 L8.5 20 L11.5 18.7 L8.6 12 L15 12 Z" fill={p.color} stroke="#fff" strokeWidth="1.5" strokeLinejoin="round" />
             </svg>
-            <span style={{ background: p.color }}>{p.name}</span>
+            <span className="cursor-label">{p.name}</span>
           </div>
         );
       })}
@@ -203,16 +208,16 @@ export function Overlay() {
       <VoteBadges cam={cam} />
       <CommentPins cam={cam} />
 
-      {hover && <Box r={worldRectToScreen(cam, itemBounds(hover, items))} className="hover-target" />}
+      {hover && <Box r={grow(worldRectToScreen(cam, itemBounds(hover, items)), 4)} className="hover-target" />}
 
       {selected.length > 1 &&
         selected.map((it) => (
-          <Box key={it.id} r={worldRectToScreen(cam, itemBounds(it, items))} className="sel-item" />
+          <Box key={it.id} r={grow(worldRectToScreen(cam, itemBounds(it, items)), 2)} className="sel-item" />
         ))}
 
       {selBox && !(single?.type === 'connector') && (
         <Box
-          r={{ x: selBox.x - 1, y: selBox.y - 1, w: selBox.w + 2, h: selBox.h + 2 }}
+          r={{ x: selBox.x - 2, y: selBox.y - 2, w: selBox.w + 4, h: selBox.h + 4 }}
           className={`sel-box ${anyLocked ? 'locked' : ''}`}
         />
       )}
@@ -235,7 +240,7 @@ export function Overlay() {
       {showDots &&
         (['top', 'right', 'bottom', 'left'] as const).map((side) => {
           const r = selBox!;
-          const off = 22;
+          const off = 26;
           const p =
             side === 'top'
               ? { x: r.x + r.w / 2, y: r.y - off }
@@ -264,11 +269,11 @@ export function Overlay() {
         if (g.axis === 'x') {
           const a = worldToScreen(cam, { x: g.at, y: g.from });
           const b = worldToScreen(cam, { x: g.at, y: g.to });
-          return <div key={i} className="guide" style={{ transform: `translate(${a.x}px, ${a.y}px)`, width: 1, height: b.y - a.y }} />;
+          return <div key={i} className="guide" style={{ transform: `translate(${a.x - 1}px, ${a.y}px)`, width: 2, height: b.y - a.y }} />;
         }
         const a = worldToScreen(cam, { x: g.from, y: g.at });
         const b = worldToScreen(cam, { x: g.to, y: g.at });
-        return <div key={i} className="guide" style={{ transform: `translate(${a.x}px, ${a.y}px)`, width: b.x - a.x, height: 1 }} />;
+        return <div key={i} className="guide" style={{ transform: `translate(${a.x}px, ${a.y - 1}px)`, width: b.x - a.x, height: 2 }} />;
       })}
     </div>
   );

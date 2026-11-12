@@ -1,10 +1,19 @@
-import { Pause, Play, Timer, TimerReset, Trophy, Vote, X } from 'lucide-react';
+import { Timer, Vote, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { itemText } from '../../shared/layout';
 import { Popover } from '../ui/Popover';
 import { focusItem } from './actions';
 import { board } from './controller';
 import { setState, showToast, useBoard } from './store';
+
+const plural = (n: number, forms: [string, string, string]) => {
+  const m10 = n % 10;
+  const m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return forms[0];
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return forms[1];
+  return forms[2];
+};
+const votesWord = (n: number) => plural(n, ['голос', 'голоса', 'голосов']);
 
 // ------------------------------------------------------------------ таймер
 
@@ -59,12 +68,15 @@ export function TimerWidget() {
   useEffect(() => {
     if (expired && timer?.endsAt && alerted.current !== timer.endsAt) {
       alerted.current = timer.endsAt;
-      showToast('Время вышло!');
+      showToast('Время вышло');
       beep();
     }
   }, [expired, timer?.endsAt]);
 
   const start = (minutes: number) => board.timer({ action: 'start', durationMs: Math.round(minutes * 60_000) });
+  // состояние — словом на заливке: «ВРЕМЯ ВЫШЛО», «ПАУЗА 4:58», во время отсчёта — само время
+  const state = expired ? 'expired' : timer?.running ? 'running' : 'paused';
+  const label = expired ? 'ВРЕМЯ ВЫШЛО' : timer?.running ? formatDuration(remaining) : `ПАУЗА ${formatDuration(remaining)}`;
 
   return (
     <Popover
@@ -72,18 +84,12 @@ export function TimerWidget() {
       className="align-right"
       trigger={(_o, toggle) =>
         timer ? (
-          <button
-            type="button"
-            className={`timer-pill ${expired ? 'expired' : timer.running ? 'running' : 'paused'}`}
-            onClick={toggle}
-            title={`Таймер (запустил: ${timer.by})`}
-            data-testid="timer-pill"
-          >
-            <Timer size={15} /> {formatDuration(remaining)}
+          <button type="button" className={`timer-pill ${state}`} onClick={toggle} title={`Таймер. Запустил: ${timer.by}`} data-testid="timer-pill">
+            {label}
           </button>
         ) : (
-          <button type="button" className="icon-btn" title="Таймер" onClick={toggle} data-testid="timer-button">
-            <Timer size={18} />
+          <button type="button" className="icon-btn" title="Запустить таймер" aria-label="Запустить таймер" onClick={toggle} data-testid="timer-button">
+            <Timer size={20} />
           </button>
         )
       }
@@ -95,17 +101,17 @@ export function TimerWidget() {
             <div className="row-buttons">
               {timer.running && !expired ? (
                 <button type="button" className="chip" onClick={() => board.timer({ action: 'pause' })}>
-                  <Pause size={14} /> Пауза
+                  Приостановить
                 </button>
               ) : (
                 remaining > 0 && (
                   <button type="button" className="chip" onClick={() => board.timer({ action: 'resume' })}>
-                    <Play size={14} /> Продолжить
+                    Продолжить
                   </button>
                 )
               )}
               <button type="button" className="chip" onClick={() => board.timer({ action: 'add', deltaMs: 60_000 })}>
-                +1 мин
+                Добавить минуту
               </button>
               <button
                 type="button"
@@ -114,12 +120,13 @@ export function TimerWidget() {
                   board.timer({ action: 'reset' });
                   close();
                 }}
+                data-testid="timer-reset"
               >
-                <TimerReset size={14} /> Сброс
+                Сбросить
               </button>
             </div>
           )}
-          <div className="list-title">{timer ? 'Перезапустить' : 'Запустить'}</div>
+          <div className="list-title">{timer ? 'Запустить заново' : 'Запустить'}</div>
           <div className="row-buttons">
             {PRESETS.map((m) => (
               <button
@@ -146,10 +153,10 @@ export function TimerWidget() {
               close();
             }}
           >
-            <input className="small-input" value={custom} onChange={(e) => setCustom(e.target.value)} inputMode="decimal" aria-label="Минут" />
-            <span className="muted">мин</span>
+            <input className="field small-input" value={custom} onChange={(e) => setCustom(e.target.value)} onKeyDown={(e) => e.stopPropagation()} inputMode="decimal" aria-label="Минут" />
+            <span>мин</span>
             <button type="submit" className="chip primary">
-              Старт
+              Запустить
             </button>
           </form>
         </div>
@@ -172,11 +179,12 @@ export function VotingMenu() {
         <button
           type="button"
           className={`icon-btn ${voting?.status === 'active' ? 'active' : ''}`}
-          title="Голосование"
+          title="Открыть голосование"
+          aria-label="Открыть голосование"
           onClick={toggle}
           data-testid="voting-button"
         >
-          <Vote size={18} />
+          <Vote size={20} />
         </button>
       )}
     >
@@ -184,21 +192,23 @@ export function VotingMenu() {
         <div className="menu-panel">
           {!voting && (
             <>
-              <div className="list-title">Голосование за объекты</div>
-              <div className="hint">Каждый участник распределяет голоса между стикерами и фигурами. Чужие голоса скрыты до завершения.</div>
+              <div className="list-title">Голосование</div>
+              <div className="hint">Каждый участник раздаёт голоса стикерам и фигурам. Чужие голоса скрыты до завершения.</div>
               <div className="row-buttons">
-                <span>Голосов на участника:</span>
-                <button type="button" className="chip" onClick={() => setN((v) => Math.max(1, v - 1))} aria-label="Меньше">
+                <span>Голосов на участника</span>
+                <button type="button" className="chip round" onClick={() => setN((v) => Math.max(1, v - 1))} aria-label="Меньше">
                   −
                 </button>
-                <b data-testid="votes-per-user">{n}</b>
-                <button type="button" className="chip" onClick={() => setN((v) => Math.min(10, v + 1))} aria-label="Больше">
+                <b className="stepper-value" data-testid="votes-per-user">
+                  {n}
+                </b>
+                <button type="button" className="chip round" onClick={() => setN((v) => Math.min(10, v + 1))} aria-label="Больше">
                   +
                 </button>
               </div>
               <button
                 type="button"
-                className="primary-btn full"
+                className="chip primary full"
                 onClick={() => {
                   board.voting({ action: 'start', votesPerUser: n });
                   close();
@@ -213,43 +223,45 @@ export function VotingMenu() {
             <>
               <div className="list-title">Идёт голосование</div>
               <div>
-                Ваши голоса: {used} из {voting.votesPerUser}. Проголосовали: {voting.voters}.
+                Вы отдали {used} из {voting.votesPerUser} {votesWord(voting.votesPerUser)}. Проголосовали: {voting.voters}.
               </div>
               <button
                 type="button"
-                className="primary-btn full"
+                className="chip primary full"
                 onClick={() => {
                   board.voting({ action: 'end' });
                   close();
                 }}
               >
-                Завершить и показать итоги
+                Завершить голосование
               </button>
             </>
           )}
           {voting?.status === 'ended' && (
             <>
               <div className="list-title">Голосование завершено</div>
-              <button
-                type="button"
-                className="chip"
-                onClick={() => {
-                  setState({ panel: 'results' });
-                  close();
-                }}
-              >
-                <Trophy size={14} /> Показать итоги
-              </button>
-              <button
-                type="button"
-                className="chip"
-                onClick={() => {
-                  board.voting({ action: 'clear' });
-                  close();
-                }}
-              >
-                Очистить результаты
-              </button>
+              <div className="row-buttons">
+                <button
+                  type="button"
+                  className="chip primary"
+                  onClick={() => {
+                    setState({ panel: 'results' });
+                    close();
+                  }}
+                >
+                  Показать итоги
+                </button>
+                <button
+                  type="button"
+                  className="chip"
+                  onClick={() => {
+                    board.voting({ action: 'clear' });
+                    close();
+                  }}
+                >
+                  Очистить итоги
+                </button>
+              </div>
             </>
           )}
         </div>
@@ -262,14 +274,17 @@ export function VotingBanner() {
   const voting = useBoard((s) => s.session.voting);
   if (!voting || voting.status !== 'active') return null;
   const used = Object.values(voting.myVotes).reduce((a, b) => a + b, 0);
+  const left = voting.votesPerUser - used;
   return (
-    <div className="voting-banner panel" data-ui data-testid="voting-banner">
-      <Vote size={18} />
+    <div className="voting-banner panel bar" data-ui data-testid="voting-banner">
       <span>
-        Голосование: осталось <b>{voting.votesPerUser - used}</b> из {voting.votesPerUser} · проголосовали: {voting.voters}
+        <b>
+          Осталось {left} {votesWord(left)} из {voting.votesPerUser}
+        </b>{' '}
+        · Проголосовали: {voting.voters}
       </span>
-      <span className="muted">Клик по стикеру — голос, Alt+клик — снять</span>
-      <button type="button" className="primary-btn small" onClick={() => board.voting({ action: 'end' })} data-testid="voting-end">
+      <span className="banner-hint">Нажмите на стикер, чтобы отдать голос. Alt — забрать</span>
+      <button type="button" className="chip primary" onClick={() => board.voting({ action: 'end' })} data-testid="voting-end">
         Завершить
       </button>
     </div>
@@ -284,16 +299,16 @@ export function ResultsPanel() {
     .sort((a, b) => b[1] - a[1]);
   const max = rows[0]?.[1] ?? 1;
   return (
-    <div className="side-panel panel" data-ui data-testid="results-panel">
+    <div className="page-panel" data-ui data-testid="results-panel">
       <div className="side-head">
-        <h3>Итоги голосования</h3>
-        <button type="button" className="icon-btn small" onClick={() => setState({ panel: null })} aria-label="Закрыть">
-          <X size={16} />
+        <h2 className="subtitle">Итоги</h2>
+        <button type="button" className="icon-btn" onClick={() => setState({ panel: null })} title="Закрыть" aria-label="Закрыть">
+          <X size={20} />
         </button>
       </div>
       <div className="side-list">
-        {!voting?.results && <div className="empty small">Итоги появятся после завершения голосования.</div>}
-        {voting?.results && rows.length === 0 && <div className="empty small">Никто не проголосовал.</div>}
+        {!voting?.results && <div className="panel-empty">Здесь пока пусто. Итоги появятся после голосования.</div>}
+        {voting?.results && rows.length === 0 && <div className="panel-empty">Здесь пока пусто. Никто не проголосовал.</div>}
         {rows.map(([id, n], i) => (
           <button type="button" key={id} className="side-item result-row" onClick={() => focusItem(id, false)}>
             <span className="rank">{i + 1}</span>
@@ -303,14 +318,16 @@ export function ResultsPanel() {
                 <span style={{ width: `${(n / max) * 100}%` }} />
               </div>
             </div>
-            <b className="result-count">{n}</b>
+            <b className="result-count">
+              {n} {votesWord(n)}
+            </b>
           </button>
         ))}
       </div>
       {voting && (
         <div className="side-foot">
           <button type="button" className="chip" onClick={() => board.voting({ action: 'clear' })}>
-            Очистить результаты
+            Очистить итоги
           </button>
         </div>
       )}
@@ -320,20 +337,21 @@ export function ResultsPanel() {
 
 // ------------------------------------------------------------------ следование
 
-/** Рамка цвета ведущего вокруг вида, пока мы следуем за ним. */
+/** Рамка вокруг вида, пока мы следуем за участником (кольцо фокуса sun-400 на синем). */
 export function FollowFrame() {
-  const color = useBoard((s) => (s.following ? s.peers[s.following]?.color : undefined));
-  if (!color) return null;
-  return <div className="follow-frame" style={{ borderColor: color }} />;
+  const on = useBoard((s) => !!(s.following && s.peers[s.following]));
+  return on ? <div className="follow-frame" /> : null;
 }
 
 export function FollowLabel() {
   const peer = useBoard((s) => (s.following ? s.peers[s.following] : undefined));
   if (!peer) return null;
   return (
-    <div className="follow-label" style={{ background: peer.color }} data-ui data-testid="follow-banner">
-      Вы следуете за: {peer.name}
-      <button type="button" onClick={() => board.stopFollowing()}>
+    <div className="follow-label panel bar" data-ui data-testid="follow-banner">
+      <span>
+        Вы следуете за участником: <b>{peer.name}</b>
+      </span>
+      <button type="button" className="chip primary" onClick={() => board.stopFollowing()}>
         Перестать
       </button>
     </div>

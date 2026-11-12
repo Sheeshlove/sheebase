@@ -1,42 +1,27 @@
-import {
-  ChevronLeft,
-  CircleQuestionMark,
-  Clock3,
-  Crosshair,
-  Download,
-  Eye,
-  FileBraces,
-  FileImage,
-  Image,
-  Link,
-  MessageSquare,
-  MonitorPlay,
-  Upload,
-  Users,
-  Wifi,
-  WifiOff,
-} from 'lucide-react';
-import { useRef, useState, useSyncExternalStore } from 'react';
+import { CircleQuestionMark, Clock3, Download, Eye, MessageSquare, MonitorPlay, PanelLeft } from 'lucide-react';
+import { type ReactNode, useRef, useState, useSyncExternalStore } from 'react';
+import { Button } from '../design/components';
 import { Popover } from '../ui/Popover';
 import { getUser, subscribeUser, updateUser, USER_COLORS } from '../user';
-import { board } from './controller';
-import { exportJson, exportPng, exportSvg, importJsonFile } from './exporter';
 import { startPresentation } from './actions';
 import { commentStats } from './Comments';
+import { board } from './controller';
+import { exportJson, exportPng, exportSvg, importJsonFile } from './exporter';
 import { TimerWidget, VotingMenu } from './Facilitation';
 import { getState, type Panel, setState, showToast, useBoard, writePref } from './store';
 
 function BoardName() {
   const meta = useBoard((s) => s.meta);
   const [editing, setEditing] = useState(false);
-  if (!meta) return <div className="board-name muted">Загрузка…</div>;
+  if (!meta) return <div className="board-name">Загрузка</div>;
   if (editing) {
     return (
       <input
-        className="board-name-input"
+        className="field board-name-input"
         autoFocus
         defaultValue={meta.name}
         maxLength={120}
+        aria-label="Название доски"
         onFocus={(e) => e.target.select()}
         onKeyDown={(e) => {
           if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
@@ -57,26 +42,26 @@ function BoardName() {
   );
 }
 
+/** Состояние соединения — словом на заливке (метка Tag), а не одним цветом. */
 function Status() {
   const status = useBoard((s) => s.status);
   const map = {
-    connecting: ['Подключение…', 'status-wait'],
-    online: ['Онлайн', 'status-ok'],
-    offline: ['Нет связи — изменения сохранятся после переподключения', 'status-bad'],
-    error: ['Ошибка', 'status-bad'],
+    connecting: ['ПОДКЛЮЧЕНИЕ', 'medium', 'Подключение к серверу'],
+    online: ['В СЕТИ', 'low', 'Изменения сохраняются и видны участникам'],
+    offline: ['НЕТ СВЯЗИ', 'high', 'Нет связи. Изменения отправятся после подключения. Нажмите, чтобы подключиться'],
+    error: ['ОШИБКА', 'high', 'Не удалось открыть доску'],
   } as const;
-  const [label, cls] = map[status];
+  const [word, tone, hint] = map[status];
   return (
     <button
       type="button"
-      className={`status ${cls}`}
-      title={label}
+      className={`sb-tag sb-tag--${tone} status-tag`}
+      title={hint}
       data-testid="status"
       data-status={status}
       onClick={() => status === 'offline' && board.reconnectNow()}
     >
-      {status === 'offline' || status === 'error' ? <WifiOff size={16} /> : <Wifi size={16} />}
-      {status !== 'online' && <span className="status-text">{status === 'offline' ? 'Офлайн' : label}</span>}
+      {word}
     </button>
   );
 }
@@ -86,38 +71,44 @@ function Me() {
   return (
     <Popover
       placement="bottom"
+      className="align-right"
       trigger={(_o, toggle) => (
-        <button type="button" className="avatar me" style={{ background: user.color }} title={`${user.name} (вы)`} onClick={toggle}>
+        <button type="button" className="avatar me" style={{ background: user.color }} title={`${user.name} (вы)`} aria-label="Открыть профиль" onClick={toggle}>
           {user.name.slice(0, 1).toUpperCase()}
         </button>
       )}
     >
       {() => (
         <div className="me-panel">
-          <label>
+          <label className="field-label">
             Ваше имя
             <input
+              className="field"
               defaultValue={user.name}
               maxLength={40}
               onBlur={(e) => updateUser({ name: e.target.value })}
-              onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+              }}
             />
           </label>
-          <div className="me-colors">
+          <div className="me-colors" role="group" aria-label="Цвет курсора">
             {USER_COLORS.map((c) => (
               <button
                 key={c}
                 type="button"
-                className={`swatch ${c === user.color ? 'active' : ''}`}
+                className={`swatch small ${c === user.color ? 'active' : ''}`}
                 style={{ background: c }}
                 onClick={() => updateUser({ color: c })}
-                aria-label={c}
+                aria-label={`Выбрать цвет ${c}`}
+                aria-pressed={c === user.color}
               />
             ))}
           </div>
-          <div className="hint">Коллеги сразу видят новое имя и цвет</div>
+          <div className="hint">Участники сразу видят новое имя и цвет</div>
           <button type="button" className="chip" onClick={() => board.summon()} data-testid="summon">
-            <Users size={14} /> Собрать всех ко мне
+            Собрать всех ко мне
           </button>
         </div>
       )}
@@ -140,8 +131,9 @@ function Peers() {
             <button
               type="button"
               className={`avatar ${following === p.clientId ? 'followed' : ''}`}
-              style={{ background: p.color, outlineColor: p.color }}
+              style={{ background: p.color }}
               title={p.name}
+              aria-label={`Участник ${p.name}`}
               onClick={toggle}
               data-testid="peer-avatar"
             >
@@ -154,40 +146,44 @@ function Peers() {
               <div className="list-title">{p.name}</div>
               {following === p.clientId ? (
                 <button type="button" className="list-item" onClick={() => (close(), board.stopFollowing())}>
-                  <Eye size={16} /> Перестать следовать
+                  Перестать следовать
                 </button>
               ) : (
                 <button type="button" className="list-item" onClick={() => (close(), board.follow(p.clientId))} data-testid="follow">
-                  <Eye size={16} /> Следовать за видом
+                  Следовать за участником
                 </button>
               )}
               <button type="button" className="list-item" disabled={!p.cursor} onClick={() => (close(), p.cursor && board.centerOn(p.cursor))}>
-                <Crosshair size={16} /> Перейти к курсору
+                Перейти к курсору
               </button>
             </div>
           )}
         </Popover>
       ))}
-      {list.length > 6 && <div className="avatar more">+{list.length - 6}</div>}
+      {list.length > 6 && (
+        <div className="avatar more" title={`Ещё участников: ${list.length - 6}`}>
+          +{list.length - 6}
+        </div>
+      )}
       <Me />
     </div>
   );
 }
 
-function PanelButton({ panel, title, icon, badge, dot, testId }: { panel: Panel; title: string; icon: React.ReactNode; badge?: number; dot?: boolean; testId?: string }) {
+function PanelButton({ panel, title, icon, badge, unread, testId }: { panel: Panel; title: string; icon: ReactNode; badge?: number; unread?: boolean; testId?: string }) {
   const active = useBoard((s) => s.panel === panel);
   return (
     <button
       type="button"
       className={`icon-btn with-badge ${active ? 'active' : ''}`}
-      title={title}
+      title={unread ? `${title}. Есть новые сообщения` : title}
       aria-label={title}
+      aria-pressed={active}
       onClick={() => setState({ panel: getState().panel === panel ? null : panel })}
       data-testid={testId}
     >
       {icon}
-      {!!badge && <span className="count-badge">{badge}</span>}
-      {dot && <span className="dot-unread" />}
+      {!!badge && <span className={`count-badge ${unread ? 'unread' : ''}`}>{badge}</span>}
     </button>
   );
 }
@@ -197,42 +193,57 @@ function CommentsButton() {
   useBoard((s) => s.comments);
   useBoard((s) => s.seen);
   const { open, unread } = commentStats();
-  return <PanelButton panel="comments" title="Комментарии" icon={<MessageSquare size={18} />} badge={open} dot={unread} testId="comments-button" />;
+  return <PanelButton panel="comments" title="Показать комментарии" icon={<MessageSquare size={20} />} badge={open} unread={unread} testId="comments-button" />;
+}
+
+/** Переключатель в меню: включённое состояние — белая «таблетка», как у активного пункта боковой панели. */
+function Toggle({ label, value, onChange, testId }: { label: string; value: boolean; onChange: (v: boolean) => void; testId?: string }) {
+  return (
+    <button type="button" role="menuitemcheckbox" aria-checked={value} className={`list-item ${value ? 'active' : ''}`} onClick={() => onChange(!value)} data-testid={testId}>
+      <span>{label}</span>
+      <span className="toggle-state">{value ? 'Вкл' : 'Выкл'}</span>
+    </button>
+  );
 }
 
 function ViewMenu() {
   const showAuthors = useBoard((s) => s.showAuthors);
   const showResolved = useBoard((s) => s.showResolved);
   const showMinimap = useBoard((s) => s.showMinimap);
-  const toggle = (label: string, value: boolean, onChange: (v: boolean) => void, testId?: string) => (
-    <label className="check-row" data-testid={testId}>
-      <input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} /> {label}
-    </label>
-  );
+  const showGrid = useBoard((s) => s.showGrid);
   return (
     <Popover
       placement="bottom"
       className="align-right"
       trigger={(_o, open) => (
-        <button type="button" className="icon-btn" title="Вид" onClick={open} data-testid="view-menu">
-          <Eye size={18} />
+        <button type="button" className="icon-btn" title="Настроить вид" aria-label="Настроить вид" onClick={open} data-testid="view-menu">
+          <Eye size={20} />
         </button>
       )}
     >
       {() => (
-        <div className="menu-panel">
+        <div className="list wide" role="menu">
           <div className="list-title">Вид</div>
-          {toggle(
-            'Показывать авторов стикеров',
-            showAuthors,
-            (v) => {
+          <Toggle
+            label="Авторы стикеров"
+            value={showAuthors}
+            onChange={(v) => {
               setState({ showAuthors: v });
               writePref('showAuthors', v);
-            },
-            'toggle-authors',
-          )}
-          {toggle('Показывать решённые комментарии', showResolved, (v) => setState({ showResolved: v }))}
-          {toggle('Мини-карта', showMinimap, (v) => setState({ showMinimap: v }))}
+            }}
+            testId="toggle-authors"
+          />
+          <Toggle label="Решённые комментарии" value={showResolved} onChange={(v) => setState({ showResolved: v })} />
+          <Toggle label="Мини-карта" value={showMinimap} onChange={(v) => setState({ showMinimap: v })} />
+          <Toggle
+            label="Сетка"
+            value={showGrid}
+            onChange={(v) => {
+              setState({ showGrid: v });
+              writePref('showGrid', v);
+            }}
+            testId="toggle-grid"
+          />
         </div>
       )}
     </Popover>
@@ -241,6 +252,7 @@ function ViewMenu() {
 
 export function TopBar() {
   const importRef = useRef<HTMLInputElement>(null);
+  const sidebarOpen = useBoard((s) => s.sidebarOpen);
   const share = async () => {
     try {
       await navigator.clipboard.writeText(location.href);
@@ -249,53 +261,67 @@ export function TopBar() {
       window.prompt('Скопируйте ссылку на доску:', location.href);
     }
   };
+  const toggleSidebar = () => {
+    const v = !getState().sidebarOpen;
+    setState({ sidebarOpen: v });
+    writePref('sidebarOpen', v);
+  };
   return (
     <>
-      <div className="topbar-left panel" data-ui>
-        <a className="icon-link" href="#/" title="Ко всем доскам" aria-label="Ко всем доскам">
-          <ChevronLeft size={20} />
-        </a>
-        <div className="logo-mark" aria-hidden>
-          S
-        </div>
+      <div className="topbar-left panel bar" data-ui>
+        {!sidebarOpen && (
+          <>
+            <button type="button" className="icon-btn" title="Показать список досок" aria-label="Показать список досок" onClick={toggleSidebar} data-testid="sidebar-toggle">
+              <PanelLeft size={20} />
+            </button>
+            <a className="logo" href="#/" aria-label="ШИБЕЙС. Перейти ко всем доскам">
+              ШИБЕЙС
+            </a>
+          </>
+        )}
         <BoardName />
         <Status />
       </div>
-      <div className="topbar-right panel" data-ui>
+      <div className="topbar-right panel bar" data-ui>
         <Peers />
-        <div className="sep-v" />
         <TimerWidget />
         <VotingMenu />
         <CommentsButton />
-        <PanelButton panel="versions" title="История версий" icon={<Clock3 size={18} />} testId="versions-button" />
-        <button type="button" className="icon-btn hide-narrow" title="Презентация фреймов" onClick={() => startPresentation(0)} data-testid="present-button">
-          <MonitorPlay size={18} />
+        <PanelButton panel="versions" title="Показать историю версий" icon={<Clock3 size={20} />} testId="versions-button" />
+        <button
+          type="button"
+          className="icon-btn hide-narrow"
+          title="Показать презентацию"
+          aria-label="Показать презентацию"
+          onClick={() => startPresentation(0)}
+          data-testid="present-button"
+        >
+          <MonitorPlay size={20} />
         </button>
         <ViewMenu />
         <Popover
           placement="bottom"
           className="align-right"
           trigger={(_o, toggle) => (
-            <button type="button" className="icon-btn" title="Экспорт и импорт" onClick={toggle} data-testid="export-menu">
-              <Download size={18} />
+            <button type="button" className="icon-btn" title="Экспортировать или импортировать" aria-label="Экспортировать или импортировать" onClick={toggle} data-testid="export-menu">
+              <Download size={20} />
             </button>
           )}
         >
           {(close) => (
-            <div className="list">
-              <div className="list-title">Экспорт (выделение или вся доска)</div>
+            <div className="list wide">
+              <div className="list-title">Выделение или вся доска</div>
               <button type="button" className="list-item" onClick={() => (close(), void exportPng())} data-testid="export-png">
-                <Image size={16} /> Изображение PNG
+                Экспортировать в PNG
               </button>
-              <button type="button" className="list-item" onClick={() => (close(), exportSvg())}>
-                <FileImage size={16} /> Вектор SVG
+              <button type="button" className="list-item" onClick={() => (close(), void exportSvg())}>
+                Экспортировать в SVG
               </button>
               <button type="button" className="list-item" onClick={() => (close(), exportJson())}>
-                <FileBraces size={16} /> Бэкап JSON
+                Сохранить копию в JSON
               </button>
-              <div className="list-title">Импорт</div>
               <button type="button" className="list-item" onClick={() => (close(), importRef.current?.click())}>
-                <Upload size={16} /> Загрузить JSON на доску
+                Загрузить JSON на доску
               </button>
             </div>
           )}
@@ -311,12 +337,12 @@ export function TopBar() {
             e.target.value = '';
           }}
         />
-        <button type="button" className="icon-btn" title="Горячие клавиши (?)" onClick={() => setState({ showHelp: true })}>
-          <CircleQuestionMark size={18} />
+        <button type="button" className="icon-btn hide-narrow" title="Показать горячие клавиши" aria-label="Показать горячие клавиши" onClick={() => setState({ showHelp: true })}>
+          <CircleQuestionMark size={20} />
         </button>
-        <button type="button" className="primary-btn" onClick={share} data-testid="share">
-          <Link size={16} /> Поделиться
-        </button>
+        <Button variant="accent" onClick={() => void share()} data-testid="share">
+          Поделиться
+        </Button>
       </div>
     </>
   );

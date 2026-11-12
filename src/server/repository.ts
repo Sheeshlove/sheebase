@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { migrateLegacyItem } from '../shared/brand';
 import { applyOpMut, uid } from '../shared/ops';
 import { buildTemplate, TEMPLATES } from '../shared/templates';
 import type { BoardMeta, CommentThread, ItemMap, Op, VersionMeta } from '../shared/types';
@@ -61,7 +62,8 @@ export class BoardRepository {
         const items: ItemMap = {};
         for (const it of Object.values(raw.items)) {
           const clean = sanitizeItem(it);
-          if (clean) items[clean.id] = clean;
+          // доски, сохранённые до перехода на дизайн-систему, приводятся к её палитре
+          if (clean) items[clean.id] = migrateLegacyItem(clean);
         }
         // файлы версии 0.1 не содержат comments/session — подставляются значения по умолчанию
         this.boards.set(raw.meta.id, {

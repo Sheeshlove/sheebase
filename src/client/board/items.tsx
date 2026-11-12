@@ -1,6 +1,7 @@
 import { type CSSProperties, memo, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { BRAND, CONNECTOR_DASH, RADIUS_LG } from '../../shared/brand';
 import {
-  arrowHeadPath,
+  arrowChevronPath,
   connectorGeometry,
   geometryPath,
   shapePath,
@@ -246,7 +247,7 @@ function TextView({ item, editing }: { item: TextItem; editing: boolean }) {
     <div className="item text" data-id={item.id} style={style}>
       <LinkBadge item={item} />
       {editing ? (
-        <TextEditor itemId={item.id} value={item.text} onChange={editText(item.id, 'text')} maxLength={LIMITS.text} placeholder="Введите текст" />
+        <TextEditor itemId={item.id} value={item.text} onChange={editText(item.id, 'text')} maxLength={LIMITS.text} placeholder="Текст" />
       ) : (
         <Lines lines={lines} />
       )}
@@ -256,6 +257,9 @@ function TextView({ item, editing }: { item: TextItem; editing: boolean }) {
 
 function FrameView({ item, editing }: { item: FrameItem; editing: boolean }) {
   const zoom = useBoard((s) => s.camera.zoom);
+  // фрейм — белая карточка; синий фрейм на синем холсте получает белую рамку (класс deep)
+  const fill = item.fill === 'transparent' ? BRAND.white : item.fill;
+  const deep = fill.toLowerCase() === BRAND.blue700 || fill.toLowerCase() === BRAND.blue500;
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (editing) inputRef.current?.select();
@@ -263,10 +267,10 @@ function FrameView({ item, editing }: { item: FrameItem; editing: boolean }) {
   return (
     <>
       <div
-        className="item frame"
+        className={`item frame ${deep ? 'deep' : ''}`}
         data-id={item.id}
         data-frame-body="1"
-        style={{ ...boxStyle(item), background: item.fill === 'transparent' ? 'rgba(255,255,255,0.4)' : item.fill }}
+        style={{ ...boxStyle(item), background: fill, borderRadius: Math.min(RADIUS_LG, item.w / 2, item.h / 2) }}
       >
         <LinkBadge item={item} />
       </div>
@@ -282,7 +286,7 @@ function FrameView({ item, editing }: { item: FrameItem; editing: boolean }) {
           <input
             ref={inputRef}
             data-editor="1"
-            className="frame-title-input"
+            className="field frame-title-input"
             defaultValue={item.title}
             maxLength={LIMITS.shortText}
             onChange={(e) => updateItems([{ id: item.id, patch: { title: e.target.value } }])}
@@ -338,13 +342,21 @@ function ConnectorView({ item, editing }: { item: ConnectorItem; editing: boolea
   const bw = Math.max(...xs) + pad - bx;
   const bh = Math.max(...ys) + pad - by;
   const d = geometryPath(g);
+  const line = {
+    fill: 'none',
+    stroke: item.stroke,
+    strokeWidth: item.strokeWidth,
+    strokeLinejoin: 'round' as const,
+    strokeLinecap: 'round' as const,
+  };
   return (
     <div className="item connector" data-id={item.id} style={{ width: bw, height: bh, transform: `translate(${bx}px, ${by}px)` }}>
       <svg width={bw} height={bh}>
         <g transform={`translate(${-bx} ${-by})`}>
-          <path d={d} fill="none" stroke={item.stroke} strokeWidth={item.strokeWidth} strokeLinejoin="round" strokeLinecap="round" />
-          {item.endArrow === 'arrow' && <path d={arrowHeadPath(g.end, g.endDir, item.strokeWidth)} fill={item.stroke} />}
-          {item.startArrow === 'arrow' && <path d={arrowHeadPath(g.start, g.startDir, item.strokeWidth)} fill={item.stroke} />}
+          {/* линия бренда: пунктир 14 12 со скруглёнными концами; стрелка — «галочка» той же толщины */}
+          <path d={d} {...line} strokeDasharray={CONNECTOR_DASH} />
+          {item.endArrow === 'arrow' && <path d={arrowChevronPath(g.end, g.endDir, item.strokeWidth)} {...line} />}
+          {item.startArrow === 'arrow' && <path d={arrowChevronPath(g.start, g.startDir, item.strokeWidth)} {...line} />}
           <path d={d} className="hit" fill="none" strokeWidth={item.strokeWidth + 16} />
         </g>
       </svg>
@@ -404,7 +416,7 @@ export function DraftLayer() {
       {tool === 'eraser' && eraser && (
         <div
           className="eraser-cursor"
-          style={{ width: 20 / zoom, height: 20 / zoom, transform: `translate(${eraser.x - 10 / zoom}px, ${eraser.y - 10 / zoom}px)`, borderWidth: 1.5 / zoom }}
+          style={{ width: 20 / zoom, height: 20 / zoom, transform: `translate(${eraser.x - 10 / zoom}px, ${eraser.y - 10 / zoom}px)`, borderWidth: 2 / zoom }}
         />
       )}
     </>

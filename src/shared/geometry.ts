@@ -346,6 +346,25 @@ export function arrowHeadPath(tip: Pt, dir: Pt, strokeWidth: number): string {
   return `M${f(tip.x)},${f(tip.y)}L${f(bx + px * half)},${f(by + py * half)}L${f(bx - px * half)},${f(by - py * half)}Z`;
 }
 
+/**
+ * Стрелка-«галочка» на конце `tip`: два штриха под 40° к линии, как стрелки в иконках ШИБЕЙС.
+ * Рисуется обводкой той же толщины со скруглёнными концами, без заливки.
+ */
+export function arrowChevronPath(tip: Pt, dir: Pt, strokeWidth: number): string {
+  const len = 5 + strokeWidth * 2.2;
+  const a = (40 * Math.PI) / 180;
+  const bx = -dir.x;
+  const by = -dir.y;
+  const rot = (sign: number): Pt => ({
+    x: tip.x + (bx * Math.cos(a) - sign * by * Math.sin(a)) * len,
+    y: tip.y + (sign * bx * Math.sin(a) + by * Math.cos(a)) * len,
+  });
+  const p1 = rot(1);
+  const p2 = rot(-1);
+  const f = (n: number) => Math.round(n * 100) / 100;
+  return `M${f(p1.x)},${f(p1.y)}L${f(tip.x)},${f(tip.y)}L${f(p2.x)},${f(p2.y)}`;
+}
+
 /** Рамка объекта (для коннектора — вычисляется по геометрии). */
 export function itemBounds(item: Item, items: ItemMap): Rect {
   if (item.type === 'connector') {

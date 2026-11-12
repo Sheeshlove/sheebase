@@ -131,6 +131,10 @@ class BoardController {
         penWidth: keep.penWidth,
         shapeKind: keep.shapeKind,
         connectorStyle: keep.connectorStyle,
+        viewport: keep.viewport,
+        showGrid: keep.showGrid,
+        sidebarOpen: keep.sidebarOpen,
+        fontEpoch: keep.fontEpoch,
         seen: this.loadSeen(boardId),
       },
       true,
@@ -678,21 +682,23 @@ class BoardController {
   }
 
   /** Показать прямоугольник мира в видимой области. */
-  fitRect(r: Rect | null, maxZoom = 1, pad = 80) {
+  /**
+   * Показать прямоугольник мира в видимой области. Без `pad` учитываются панели интерфейса:
+   * слева инструменты, сверху шапка и заголовки фреймов.
+   */
+  fitRect(r: Rect | null, maxZoom = 1, pad?: number | { left: number; top: number; right: number; bottom: number }) {
     const { viewport } = getState();
+    const inset = pad === undefined ? { left: 120, top: 128, right: 40, bottom: 40 } : typeof pad === 'number' ? { left: pad, top: pad, right: pad, bottom: pad } : pad;
+    const w = Math.max(1, viewport.w - inset.left - inset.right);
+    const h = Math.max(1, viewport.h - inset.top - inset.bottom);
+    const cx = inset.left + w / 2;
+    const cy = inset.top + h / 2;
     if (!r) {
-      this.setCamera({ x: viewport.w / 2, y: viewport.h / 2, zoom: 1 });
+      this.setCamera({ x: cx, y: cy, zoom: 1 });
       return;
     }
-    const zoom = Math.min(
-      maxZoom,
-      Math.max(MIN_ZOOM, Math.min((viewport.w - pad * 2) / Math.max(r.w, 1), (viewport.h - pad * 2) / Math.max(r.h, 1))),
-    );
-    this.setCamera({
-      x: viewport.w / 2 - (r.x + r.w / 2) * zoom,
-      y: viewport.h / 2 - (r.y + r.h / 2) * zoom,
-      zoom,
-    });
+    const zoom = Math.min(maxZoom, Math.max(MIN_ZOOM, Math.min(w / Math.max(r.w, 1), h / Math.max(r.h, 1))));
+    this.setCamera({ x: cx - (r.x + r.w / 2) * zoom, y: cy - (r.y + r.h / 2) * zoom, zoom });
   }
 
   zoomToFit() {

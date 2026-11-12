@@ -1,6 +1,7 @@
-import { ChevronDown, ChevronUp, Search, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { searchItems } from '../../shared/layout';
+import { SearchField } from '../design/components';
 import { focusItem } from './actions';
 import { getState, setState, useBoard } from './store';
 
@@ -56,15 +57,13 @@ export function SearchBar() {
   if (!search.open) return null;
   const { hits, index, query } = search;
   return (
-    <div className="search-bar panel" data-ui data-testid="search-bar">
-      <Search size={16} className="muted" />
-      <input
-        ref={inputRef}
+    <div className="search-bar panel bar" data-ui data-testid="search-bar">
+      <SearchField
+        inputRef={inputRef}
         value={query}
-        placeholder="Поиск по тексту на доске"
+        placeholder="Найти на доске"
         data-testid="search-input"
-        onChange={(e) => {
-          const q = e.target.value;
+        onChange={(q) => {
           const found = searchItems(getState().items, q);
           setState({ search: { ...getState().search, query: q, hits: found, index: 0 } });
           if (found[0]) focusItem(found[0], false);
@@ -79,16 +78,16 @@ export function SearchBar() {
         }}
       />
       <span className="search-count" data-testid="search-count">
-        {hits.length ? `${index + 1} из ${hits.length}` : query.trim() ? 'Нет совпадений' : ''}
+        {hits.length ? `${index + 1} из ${hits.length}` : query.trim() ? 'Ничего не найдено' : ''}
       </span>
-      <button type="button" className="icon-btn small" onClick={() => go(-1)} disabled={!hits.length} title="Предыдущее (Shift+Enter)">
-        <ChevronUp size={16} />
+      <button type="button" className="icon-btn" onClick={() => go(-1)} disabled={!hits.length} title="Показать предыдущее (Shift+Enter)" aria-label="Показать предыдущее">
+        <ChevronUp size={20} />
       </button>
-      <button type="button" className="icon-btn small" onClick={() => go(1)} disabled={!hits.length} title="Следующее (Enter)">
-        <ChevronDown size={16} />
+      <button type="button" className="icon-btn" onClick={() => go(1)} disabled={!hits.length} title="Показать следующее (Enter)" aria-label="Показать следующее">
+        <ChevronDown size={20} />
       </button>
-      <button type="button" className="icon-btn small" onClick={closeSearch} title="Закрыть (Esc)">
-        <X size={16} />
+      <button type="button" className="icon-btn" onClick={closeSearch} title="Закрыть (Esc)" aria-label="Закрыть">
+        <X size={20} />
       </button>
     </div>
   );

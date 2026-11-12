@@ -1,0 +1,146 @@
+/* ШИБЕЙС — generated from tokens.json */
+:root, [data-theme="brand"] {
+  --blue-500: #5c7da6; /* Brand blue. The ground of every ШИБЕЙС screen: the workspace canvas, boards and empty states. White text on it is 4.25:1: use it only for text 24px and up or bold 19px and up (3:1), never for small body copy. */
+  --blue-700: #35546c; /* Deep blue-teal. Sidebar ground (white text 7.97:1), text on white cards and pills (7.97:1 on white), and the fill of primary buttons on cards. Never set it as text on blue-500 (1.87:1); where it touches blue-500 as a control, add a white 2px border. */
+  --white: #ffffff; /* Page cards, inputs, pills and sticky notes laid on the ground; headlines and large text on blue-500; the dashed connector line on boards. */
+  --ink: #000000; /* Body text of pages and cards on white (21:1) and text on sun-400, risk and sticky-note fills (4.9:1 on blue-500). */
+  --gray-600: #737373; /* Hairline rules, placeholder text and secondary meta on white (4.74:1 against white). */
+  --sun-400: #ffdd00; /* Signal yellow. The one warm accent: accent buttons on the blue ground (3.16:1 on blue-500, 5.92:1 on blue-700), keyboard focus rings on blue, large section labels on boards, the idea sticky note, and the medium status tag with ink text (15.6:1). Never on white as a ring or text (1.4:1). */
+  --alert-red: #f90000; /* Highlight bars that call out a point in a table or comparison. Carry ink text on it (5.03:1); never white text. */
+  --risk-high: #ff8a8a; /* Fill behind the HIGH status tag and the blocked sticky note. Ink text on it (9.25:1). Always pair with the word, not colour alone. */
+  --risk-medium: var(--sun-400); /* Fill behind the MEDIUM status tag. Ink text on it (15.6:1). Always pair with the word. */
+  --risk-low: #b3ffa7; /* Fill behind the LOW status tag and the done sticky note. Ink text on it (17.8:1). Always pair with the word. Lighter than risk-high, so the pair stays apart in lightness. */
+  --surface: var(--blue-500); /* App ground: the workspace canvas and board background. Text on it is white, large or bold. */
+  --surface-card: var(--white); /* Page cards, inputs, pills and sticky notes laid on the ground. Text on it is ink or blue-700. */
+  --on-surface: var(--white); /* Text on surface (blue-500). Headlines at 24px and up, or bold. */
+  --on-card: var(--ink); /* Body text on surface-card. */
+  --on-card-accent: var(--blue-700); /* Page titles and card headings on surface-card where the brand colour should show (7.97:1). */
+}
+:root {
+  --space-1: 8px; /* Gap between an icon and its label; padding inside a tag. */
+  --space-2: 16px; /* Padding inside a card row or pill. */
+  --space-3: 24px; /* Gutter between cards and around page content. */
+  --space-4: 48px; /* Gap between a page title and its content. */
+  --radius-sm: 4px; /* Sticky notes, highlight bars and table callouts. */
+  --radius-lg: 32px; /* Page cards and board frames laid on the ground. */
+  --radius-pill: 999px; /* Buttons, search field, tags and sidebar items. */
+  --font-logo: "Ambidexter", "Georgia", serif;
+  --font-text: "Acari Sans", "Arial", sans-serif;
+  --text-logotype: 400 96px/1 var(--font-logo); /* The name ШИБЕЙС wherever it appears as the logo: ink on white, white on blue-500 or blue-700. Scale it down by size, never restyle it. No other text is set in this face. */
+  --text-hero: 700 55px/1.1 var(--font-text); /* Empty-state and onboarding headline, white on blue-500. */
+  --text-title: 700 61px/1.1 var(--font-text); /* Page title at the top of a page card or workspace home. White on blue-500, blue-700 on white. */
+  --text-subtitle: 700 30px/1.2 var(--font-text); /* Section heading inside a page. */
+  --text-lead: 400 23px/1.4 var(--font-text); /* Page intro paragraph under the title. */
+  --text-stat: 700 24px/1.2 var(--font-text); /* Key figure in a card or dashboard chip. */
+  --text-body: 400 17px/1.4 var(--font-text); /* Page body text on white. */
+  --text-body-strong: 700 17px/1.4 var(--font-text); /* Card titles, button labels and emphasised phrases inside body copy. */
+  --text-caption: 700 12px/1.3 var(--font-text); /* Small counters and deltas beside a figure. */
+  --text-note: 400 17px/1.4 var(--font-text); /* Notes and placeholder copy in inputs on white. */
+  --text-meta-strong: 700 13px/1.3 var(--font-text); /* Compact UI labels: tags, sidebar items, small controls. */
+  --text-meta: 400 14px/1.3 var(--font-text); /* Secondary meta on cards: author, date, count. */
+}
+.logotype {
+  font-family: var(--font-logo);
+  font-size: 96px;
+  line-height: 1;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.hero {
+  font-family: var(--font-text);
+  font-size: 55px;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.title {
+  font-family: var(--font-text);
+  font-size: 61px;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.subtitle {
+  font-family: var(--font-text);
+  font-size: 30px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.lead {
+  font-family: var(--font-text);
+  font-size: 23px;
+  line-height: 1.4;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.stat {
+  font-family: var(--font-text);
+  font-size: 24px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.body {
+  font-family: var(--font-text);
+  font-size: 17px;
+  line-height: 1.4;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.body-strong {
+  font-family: var(--font-text);
+  font-size: 17px;
+  line-height: 1.4;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.caption {
+  font-family: var(--font-text);
+  font-size: 12px;
+  line-height: 1.3;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.note {
+  font-family: var(--font-text);
+  font-size: 17px;
+  line-height: 1.4;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.meta-strong {
+  font-family: var(--font-text);
+  font-size: 13px;
+  line-height: 1.3;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.meta {
+  font-family: var(--font-text);
+  font-size: 14px;
+  line-height: 1.3;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+@font-face {
+  font-family: "Ambidexter";
+  src: url("fonts/Ambidexter_Regular.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Acari Sans";
+  src: url("fonts/AcariSans-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Acari Sans";
+  src: url("fonts/AcariSans-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}

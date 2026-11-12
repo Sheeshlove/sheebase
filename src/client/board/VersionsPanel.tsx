@@ -1,9 +1,10 @@
-import { RotateCcw, Save, Trash, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { ItemMap, VersionMeta } from '../../shared/types';
 import { api } from '../api';
+import { Button, Tag } from '../design/components';
 import { timeAgo } from './Comments';
-import { buildSvg } from './exporter';
+import { buildSvg, exportFontCss } from './exporter';
 import { setState, showToast, useBoard } from './store';
 
 function plural(n: number) {
@@ -49,9 +50,9 @@ export function VersionsPanel() {
     if (!boardId) return;
     setPreview({ meta, url: null });
     try {
-      const v = await api.version(boardId, meta.id);
+      const [v, fontCss] = await Promise.all([api.version(boardId, meta.id), exportFontCss()]);
       const items: ItemMap = v.items;
-      const svg = buildSvg(Object.values(items), items);
+      const svg = buildSvg(Object.values(items), items, fontCss);
       setPreview({ meta, url: svg ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg.svg)}` : '' });
     } catch {
       showToast('Не удалось открыть версию');
@@ -79,11 +80,11 @@ export function VersionsPanel() {
 
   return (
     <>
-      <div className="side-panel panel" data-ui data-testid="versions-panel">
+      <div className="page-panel" data-ui data-testid="versions-panel">
         <div className="side-head">
-          <h3>История версий</h3>
-          <button type="button" className="icon-btn small" onClick={() => setState({ panel: null })} aria-label="Закрыть">
-            <X size={16} />
+          <h2 className="subtitle">Версии</h2>
+          <button type="button" className="icon-btn" onClick={() => setState({ panel: null })} title="Закрыть" aria-label="Закрыть">
+            <X size={20} />
           </button>
         </div>
         <form
@@ -93,22 +94,32 @@ export function VersionsPanel() {
             void save();
           }}
         >
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Название версии" maxLength={120} data-testid="version-name" />
-          <button type="submit" className="primary-btn small" disabled={busy} data-testid="version-save">
-            <Save size={14} /> Сохранить
+          <input
+            className="field"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.stopPropagation()}
+            placeholder="Название версии"
+            aria-label="Название версии"
+            maxLength={120}
+            data-testid="version-name"
+          />
+          <button type="submit" className="chip primary" disabled={busy} data-testid="version-save">
+            Сохранить
           </button>
         </form>
-        <div className="hint pad">Автоматически версия сохраняется перед первой правкой после 10 минут паузы.</div>
+        <p className="panel-hint">Версия сохраняется сама перед первой правкой после 10 минут паузы.</p>
         <div className="side-list">
-          {list === null && <div className="empty small">Загрузка…</div>}
-          {list?.length === 0 && <div className="empty small">Версий пока нет.</div>}
+          {list === null && <div className="panel-empty">Загрузка</div>}
+          {list?.length === 0 && <div className="panel-empty">Здесь пока пусто. Сохраните первую версию.</div>}
           {list?.map((v) => (
             <button type="button" key={v.id} className="side-item" onClick={() => void open(v)} data-testid="version-row">
               <div className="side-item-body">
-                <div className="clamp-2">
-                  {v.name} {v.auto && <span className="badge">авто</span>}
+                <div className="item-title">
+                  <span className="clamp-2">{v.name}</span>
+                  {v.auto && <Tag>Авто</Tag>}
                 </div>
-                <div className="muted small-text">
+                <div className="meta-line">
                   {timeAgo(v.createdAt)} · {v.itemCount} {plural(v.itemCount)}
                 </div>
               </div>
@@ -118,26 +129,26 @@ export function VersionsPanel() {
       </div>
       {preview && (
         <div className="modal-backdrop" onPointerDown={() => setPreview(null)} data-ui>
-          <div className="modal panel version-preview" onPointerDown={(e) => e.stopPropagation()} data-testid="version-preview">
+          <div className="modal page-card version-preview" onPointerDown={(e) => e.stopPropagation()} data-testid="version-preview" role="dialog" aria-label={`Версия «${preview.meta.name}»`}>
             <div className="modal-head">
-              <h2>{preview.meta.name}</h2>
-              <button type="button" className="icon-btn" onClick={() => setPreview(null)} aria-label="Закрыть">
-                <X size={18} />
+              <h2 className="subtitle">{preview.meta.name}</h2>
+              <button type="button" className="icon-btn" onClick={() => setPreview(null)} title="Закрыть" aria-label="Закрыть">
+                <X size={20} />
               </button>
             </div>
-            <div className="muted small-text">
+            <p className="meta-line">
               {new Date(preview.meta.createdAt).toLocaleString('ru-RU')} · {preview.meta.itemCount} {plural(preview.meta.itemCount)}
-            </div>
+            </p>
             <div className="preview-box">
-              {preview.url === null ? 'Загрузка…' : preview.url ? <img src={preview.url} alt="Предпросмотр версии" /> : 'Пустая доска'}
+              {preview.url === null ? <span className="stat">Загрузка</span> : preview.url ? <img src={preview.url} alt="Предпросмотр версии" /> : <span className="stat">Пустая доска</span>}
             </div>
             <div className="row-buttons end">
               <button type="button" className="chip" onClick={() => void remove(preview.meta)}>
-                <Trash size={14} /> Удалить версию
+                Удалить версию
               </button>
-              <button type="button" className="primary-btn" onClick={() => void restore(preview.meta)} data-testid="version-restore">
-                <RotateCcw size={16} /> Восстановить
-              </button>
+              <Button variant="primary" onClick={() => void restore(preview.meta)} data-testid="version-restore">
+                Восстановить
+              </Button>
             </div>
           </div>
         </div>

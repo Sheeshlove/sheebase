@@ -2,7 +2,8 @@
 // Одна и та же раскладка используется при отрисовке, расчёте высоты и экспорте,
 // поэтому текст выглядит одинаково везде.
 
-export const FONT_FAMILY = '"Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif';
+/** Гарнитура текста ШИБЕЙС (токен `--font-text`): Acari Sans, обычное и жирное начертания. */
+export const FONT_FAMILY = '"Acari Sans", "Arial", sans-serif';
 export const LINE_HEIGHT = 1.3;
 
 let ctx: CanvasRenderingContext2D | null = null;
@@ -13,6 +14,15 @@ function context(): CanvasRenderingContext2D | null {
   if (typeof document === 'undefined') return null;
   ctx = document.createElement('canvas').getContext('2d');
   return ctx;
+}
+
+/**
+ * Сбросить кеши измерений. Вызывается, когда догрузились шрифты: до этого
+ * canvas мерил текст запасной гарнитурой и переносы строк могли не совпасть.
+ */
+export function resetTextCache() {
+  widthCache.clear();
+  fitCache.clear();
 }
 
 export function fontString(size: number, bold = false): string {
@@ -133,10 +143,13 @@ export function textBlockHeight(text: string, fontSize: number, width: number, b
   return Math.ceil(lines.length * fontSize * LINE_HEIGHT + TEXT_PAD * 2);
 }
 
+/** Текст стикера — жирный, как в компоненте StickyNote дизайн-системы. */
+export const STICKY_BOLD = true;
+
 /** Параметры текста стикера. `footer` — место снизу под подпись автора. */
 export function stickyText(text: string, w: number, h: number, footer = 0) {
   const pad = Math.max(8, w * 0.08);
-  return { pad, ...fitText(text, w - pad * 2, h - pad * 2 - footer, Math.max(10, Math.round(h * 0.16)), 4) };
+  return { pad, ...fitText(text, w - pad * 2, h - pad * 2 - footer, Math.max(10, Math.round(h * 0.16)), 4, STICKY_BOLD) };
 }
 
 /** Высота подписи автора стикера. */

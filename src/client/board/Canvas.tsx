@@ -31,6 +31,8 @@ export function Canvas() {
   const panning = useBoard((s) => s.panning);
   const spacePan = useBoard((s) => s.spacePan);
   const voting = useBoard((s) => votingActive(s));
+  const gridOn = useBoard((s) => s.showGrid);
+  const fontEpoch = useBoard((s) => s.fontEpoch);
 
   useEffect(() => {
     const el = ref.current!;
@@ -56,7 +58,7 @@ export function Canvas() {
   }, []);
 
   const grid = 24 * camera.zoom;
-  const showGrid = camera.zoom >= 0.3;
+  const showGrid = gridOn && camera.zoom >= 0.3;
   const cursorClass = panning ? 'panning' : spacePan || tool === 'hand' ? 'grab' : `tool-${tool}`;
 
   return (
@@ -86,7 +88,9 @@ export function Canvas() {
       onDrop={(e) => interactions?.drop(e.nativeEvent)}
       data-testid="canvas"
     >
+      {/* key: когда шрифты догрузились, объекты монтируются заново и текст перекладывается */}
       <div
+        key={fontEpoch}
         className="world"
         style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}
       >
