@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "@shibase/config": "workspace:*",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^5.1.0"
   }
 }
