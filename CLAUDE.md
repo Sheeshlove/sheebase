@@ -18,7 +18,7 @@
 - pnpm dev — все приложения
 - pnpm verify — lint + typecheck + test:unit + test:int (обязательно перед коммитом)
 - pnpm test:e2e [--grep @tag] — Playwright (появится с M1.6)
-- pnpm db:generate | db:migrate | db:reset (появятся с M1.1)
+- pnpm db:generate | db:migrate | db:reset — миграции drizzle-kit; reset только для локальной базы
 - pnpm seed:dev | seed:demo (появятся с M1)
 - pnpm eval:structuring | eval:search | loadtest:collab | report:pilot (появятся с M7–M10)
 - pnpm licenses:check | doctor
