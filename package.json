@@ -1,41 +1,35 @@
 {
-  "name": "sheebase-board",
-  "version": "0.1.0",
+  "name": "shibase",
   "private": true,
-  "description": "Прототип совместной онлайн-доски (Miro-like whiteboard) с синхронизацией в реальном времени",
   "type": "module",
+  "packageManager": "pnpm@10.28.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
-    "dev": "concurrently -k -n server,client -c blue,green \"npm:dev:server\" \"npm:dev:client\"",
-    "dev:server": "tsx watch src/server/main.ts",
-    "dev:client": "vite",
-    "build": "tsc --noEmit && vite build",
-    "start": "tsx src/server/main.ts",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "e2e": "node e2e/run.mjs"
-  },
-  "dependencies": {
-    "express": "^5.3.0",
-    "lucide-react": "^1.70.0",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1",
-    "tsx": "^4.23.15",
-    "ws": "^8.22.2",
-    "zustand": "^5.1.0"
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "eslint .",
+    "typecheck": "turbo run typecheck",
+    "test:unit": "turbo run test:unit && vitest run tools/claude",
+    "test:int": "turbo run test:int",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test:unit && pnpm test:int",
+    "test:e2e": "echo 'e2e появятся с этапа M1.6' && exit 0",
+    "format": "prettier --write .",
+    "infra:up": "docker compose -f infra/docker-compose.yml up -d --wait",
+    "infra:down": "docker compose -f infra/docker-compose.yml down",
+    "doctor": "node tools/doctor.mjs",
+    "licenses:check": "node tools/licenses-check.mjs"
   },
   "devDependencies": {
-    "@types/express": "^5.0.6",
-    "@types/node": "^26.6.6",
-    "@types/react": "^19.3.0",
-    "@types/react-dom": "^19.3.0",
-    "@types/ws": "^8.18.2",
-    "@vitejs/plugin-react": "^6.3.0",
-    "concurrently": "^10.0.7",
-    "typescript": "^7.0.2",
-    "vite": "^8.3.7",
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.14.0",
+    "eslint-plugin-boundaries": "^7.4.2",
+    "prettier": "^3.10.1",
+    "tsx": "^4.23.15",
+    "turbo": "^2.11.11",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.2",
     "vitest": "^5.1.0"
   }
 }

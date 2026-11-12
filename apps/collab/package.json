@@ -1,0 +1,23 @@
+{
+  "name": "@shibase/collab",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Сервер совместного редактирования (Hocuspocus)",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run --passWithNoTests --exclude '**/*.int.test.ts' --exclude '**/node_modules/**'",
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "test:int": "vitest run --passWithNoTests .int.test."
+  },
+  "dependencies": {
+    "@shibase/shared": "workspace:*",
+    "@hocuspocus/server": "^3.0.0",
+    "pino": "^9.0.0"
+  },
+  "devDependencies": {
+    "@shibase/config": "workspace:*",
+    "@types/node": "^22.0.0"
+  }
+}

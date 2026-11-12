@@ -1,0 +1,16 @@
+{
+  "name": "@shibase/site",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Сайт проекта (Astro, статический)",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@shibase/config": "workspace:*",
+    "astro": "^5.0.0"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "@shibase/spikes",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Спайки этапа M0 (M0.6–M0.8): одноразовый исследовательский код, в сборку не входит",
+  "scripts": {
+    "m0.6": "tsx m0.6-blocknote-hocuspocus/spike.ts",
+    "m0.7": "node m0.7-konva/run.mjs",
+    "m0.8": "tsx m0.8-pgvector/spike.ts"
+  },
+  "dependencies": {
+    "@blocknote/core": "^0.51.0",
+    "@blocknote/server-util": "^0.51.0",
+    "@hocuspocus/provider": "^3.0.0",
+    "@hocuspocus/server": "^3.0.0",
+    "konva": "^10.0.0",
+    "pg": "^8.0.0",
+    "yjs": "^13.6.0"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^30.0.0",
+    "@types/pg": "^8.0.0",
+    "jsdom": "^25.0.1"
+  }
+}

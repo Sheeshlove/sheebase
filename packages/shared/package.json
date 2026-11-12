@@ -1,0 +1,22 @@
+{
+  "name": "@shibase/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "zod-схемы, типы, константы, permissions, plans, события аналитики",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run --passWithNoTests --exclude '**/*.int.test.ts' --exclude '**/node_modules/**'",
+    "test:int": "vitest run --passWithNoTests .int.test."
+  },
+  "dependencies": {
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@shibase/config": "workspace:*",
+    "@types/node": "^22.0.0"
+  }
+}

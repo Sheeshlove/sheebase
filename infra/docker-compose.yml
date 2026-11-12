@@ -1,0 +1,47 @@
+# Локальная разработка и CI: postgres (pgvector), valkey, minio, mailpit. См. docs/SPEC.md, 13.1.
+name: shibase
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: shibase
+      POSTGRES_PASSWORD: shibase
+      POSTGRES_DB: shibase
+    ports: ['5432:5432']
+    volumes: ['pgdata:/var/lib/postgresql/data']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U shibase -d shibase']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    ports: ['6379:6379']
+    healthcheck:
+      test: ['CMD', 'valkey-cli', 'ping']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports: ['9000:9000', '9001:9001']
+    volumes: ['miniodata:/data']
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports: ['1025:1025', '8025:8025']
+
+volumes:
+  pgdata:
+  miniodata:

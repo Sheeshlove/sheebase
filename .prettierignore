@@ -1,0 +1,7 @@
+prototype
+pnpm-lock.yaml
+docs/SPEC.md
+docs/spec
+reports
+dist
+.astro

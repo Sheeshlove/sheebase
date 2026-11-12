@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>M0.7 — Konva, 2000 элементов</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #5c7da6;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <script src="../node_modules/konva/konva.min.js"></script>
+    <script>
+      // Спайк M0.7: 2000 элементов (стикеры: прямоугольник + текст), панорамирование и масштаб, замер FPS.
+      const W = 1600,
+        H = 900,
+        N = 2000;
+      const stage = new Konva.Stage({ container: 'stage', width: W, height: H });
+      const layer = new Konva.Layer({ listening: false });
+      stage.add(layer);
+      const tones = ['#ffdd00', '#b3ffa7', '#ff8a8a', '#ffffff'];
+      const items = [],
+        texts = [];
+      // сетка 50×40 на поле 10000×6400 — в кадр при масштабе 1 попадает ~5 % элементов
+      for (let i = 0; i < N; i++) {
+        const g = new Konva.Group({ x: (i % 50) * 200, y: Math.floor(i / 50) * 160 });
+        g.add(
+          new Konva.Rect({
+            width: 160,
+            height: 120,
+            fill: tones[i % 4],
+            cornerRadius: 4,
+            perfectDrawEnabled: false,
+          }),
+        );
+        g.add(
+          new Konva.Text({
+            text: 'Стикер ' + (i + 1) + '\nтекст заметки',
+            width: 160,
+            padding: 12,
+            fontSize: 16,
+            fill: '#1c1c1c',
+            perfectDrawEnabled: false,
+          }),
+        );
+        layer.add(g);
+        items.push(g);
+        texts.push(g.children[1]);
+      }
+      function cull() {
+        const s = stage.scaleX(),
+          x0 = -stage.x() / s,
+          y0 = -stage.y() / s,
+          x1 = x0 + W / s,
+          y1 = y0 + H / s;
+        let shown = 0;
+        for (const g of items) {
+          const v = g.x() + 160 >= x0 && g.x() <= x1 && g.y() + 120 >= y0 && g.y() <= y1;
+          if (v) shown++;
+          if (g.visible() !== v) g.visible(v);
+        }
+        return shown;
+      }
+      function stats(frames) {
+        const sorted = [...frames].sort((a, b) => a - b);
+        const avg = frames.reduce((a, b) => a + b, 0) / frames.length;
+        return {
+          frames: frames.length,
+          fpsAvg: +(1000 / avg).toFixed(1),
+          frameMsAvg: +avg.toFixed(2),
+          frameMsP95: +sorted[Math.floor(sorted.length * 0.95)].toFixed(2),
+          frameMsMax: +sorted.at(-1).toFixed(2),
+        };
+      }
+      // step(t) двигает камеру; кадр рисуется синхронно (layer.draw), интервалы между rAF — время кадра
+      function run(name, ms, useCull, step, lod = false) {
+        return new Promise((resolve) => {
+          for (const g of items) g.visible(true);
+          for (const t of texts) t.visible(!lod);
+          const frames = [];
+          let shownSum = 0;
+          let last = 0;
+          const start = performance.now();
+          function tick(now) {
+            if (last) frames.push(now - last);
+            last = now;
+            const t = (now - start) / ms;
+            if (t >= 1)
+              return resolve({
+                name,
+                cull: useCull,
+                lod,
+                ...stats(frames),
+                visibleAvg: Math.round(shownSum / Math.max(frames.length, 1)),
+              });
+            step(t);
+            shownSum += useCull ? cull() : N;
+            layer.draw();
+            requestAnimationFrame(tick);
+          }
+          requestAnimationFrame(tick);
+        });
+      }
+      const pan = (t) => {
+        stage.scale({ x: 1, y: 1 });
+        stage.position({ x: -t * 8400, y: -t * 5500 });
+      };
+      const zoom = (t) => {
+        const s = 0.12 + 1.88 * Math.abs(Math.sin(t * Math.PI));
+        stage.scale({ x: s, y: s });
+        stage.position({ x: W / 2 - 5000 * s, y: H / 2 - 3200 * s });
+      };
+      const overview = (t) => {
+        stage.scale({ x: 0.16, y: 0.16 });
+        stage.position({ x: Math.sin(t * 6.28) * 40, y: Math.cos(t * 6.28) * 40 });
+      };
+      window.runSpike = async (ms) => {
+        const out = [];
+        out.push(await run('панорамирование, масштаб 100 %', ms, false, pan));
+        out.push(await run('панорамирование, масштаб 100 %', ms, true, pan));
+        out.push(await run('масштабирование 12 % ↔ 200 %', ms, false, zoom));
+        out.push(await run('масштабирование 12 % ↔ 200 %', ms, true, zoom));
+        out.push(await run('обзор: все 2000 в кадре, масштаб 16 %', ms, true, overview));
+        // уровень детализации: при мелком масштабе текст не читается — рисуем только плашки
+        out.push(await run('обзор: все 2000 в кадре, масштаб 16 %', ms, true, overview, true));
+        return out;
+      };
+    </script>
+  </body>
+</html>

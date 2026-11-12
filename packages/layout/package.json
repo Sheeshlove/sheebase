@@ -1,0 +1,20 @@
+{
+  "name": "@shibase/layout",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "раскладка интеллект-карты, измерение текста",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run --passWithNoTests --exclude '**/*.int.test.ts' --exclude '**/node_modules/**'",
+    "test:int": "vitest run --passWithNoTests .int.test."
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@shibase/config": "workspace:*",
+    "@types/node": "^22.0.0"
+  }
+}

@@ -1,6 +1,14 @@
 node_modules/
 dist/
-data/
-e2e/artifacts/
+.turbo/
+.astro/
+.env
+.env.*
+!.env.example
+data/boards/
+data/versions/
+prototype/data/
+prototype/dist/
+prototype/e2e/artifacts/
 *.log
 .DS_Store

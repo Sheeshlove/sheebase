@@ -1,0 +1,65 @@
+name: CI
+# Проверки по docs/SPEC.md, 13.3 (без деплоя — он появится на этапе M10).
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: shibase
+          POSTGRES_PASSWORD: shibase
+          POSTGRES_DB: shibase
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U shibase" --health-interval 5s --health-timeout 5s --health-retries 20
+      valkey:
+        image: valkey/valkey:8-alpine
+        ports: ['6379:6379']
+      minio:
+        image: bitnami/minio:latest
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+        ports: ['9000:9000']
+    env:
+      NODE_ENV: test
+      LLM_PROVIDER: mock
+      EMBEDDING_PROVIDER: mock
+      DATABASE_URL: postgres://shibase:shibase@localhost:5432/shibase
+      VALKEY_URL: redis://localhost:6379
+      S3_ENDPOINT: http://localhost:9000
+      SESSION_SECRET: ci-only-session-secret-000000000000000000000000000000000000000000
+      COLLAB_JWT_SECRET: ci-only-collab-secret-0000000000000000000000000000000000000000000
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test:unit
+      - run: pnpm test:int
+      - run: pnpm build
+      - run: pnpm test:e2e
+      - run: pnpm licenses:check
+      - run: pnpm audit --prod --audit-level high
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

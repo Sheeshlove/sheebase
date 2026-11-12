@@ -1,0 +1,27 @@
+{
+  "name": "@shibase/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SPA (React + Vite)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run --passWithNoTests --exclude '**/*.int.test.ts' --exclude '**/node_modules/**'",
+    "test:int": "vitest run --passWithNoTests .int.test."
+  },
+  "dependencies": {
+    "@shibase/shared": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@shibase/config": "workspace:*",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "vite": "^7.0.0",
+    "@types/node": "^22.0.0"
+  }
+}
