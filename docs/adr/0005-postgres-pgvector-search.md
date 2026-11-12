@@ -9,7 +9,7 @@
 
 ## Решение
 
-PostgreSQL 17 с расширением pgvector (образ `pgvector/pgvector:pg17`), встроенная конфигурация FTS `russian`, объединение результатов через RRF. ORM и миграции — Drizzle и drizzle-kit, SQL-миграции коммитятся. Доступ к БД — только через `packages/db`.
+PostgreSQL 17 с расширением pgvector (образ `pgvector/pgvector:pg17`), встроенная конфигурация FTS `russian`, объединение результатов через RRF. ORM и миграции — Drizzle и drizzle-kit, SQL-миграции коммитятся. Драйвер PostgreSQL — `pg` (решение человека от 2026-11-12). Доступ к БД — только через `packages/db`.
 
 ## Альтернативы
 

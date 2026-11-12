@@ -5,6 +5,7 @@ import { execSync } from 'node:child_process';
 
 const ALLOWED = new Set([
   'MIT',
+  'MIT-0', // разрешена решением человека от 2026-11-12 (docs/STATUS.md)
   'ISC',
   'BSD-2-Clause',
   'BSD-3-Clause',
