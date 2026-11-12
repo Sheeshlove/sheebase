@@ -41,4 +41,4 @@
 ## Завершение задачи
 
 Definition of Done из docs/spec/00-overview.md → обновить STATUS.md и PLAN.md → коммит
-`<type>(<scope>): <ID> <описание>`. Push делает человек.
+`<type>(<scope>): <ID> <описание>`. Push в рабочую ветку делает агент (решение от 2026-11-12, см. docs/STATUS.md).

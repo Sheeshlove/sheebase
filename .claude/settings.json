@@ -16,8 +16,6 @@
       "Read(./.env)",
       "Read(./.env.*)",
       "Read(./infra/certs/**)",
-      "Bash(git push:*)",
-      "Bash(git push --force:*)",
       "Bash(rm -rf /*)",
       "Bash(pnpm publish:*)",
       "Bash(docker system prune:*)"
